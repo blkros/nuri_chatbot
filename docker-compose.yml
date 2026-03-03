@@ -1,0 +1,45 @@
+services:
+  vllm:
+    image: vllm/vllm-openai:v0.11.0
+    container_name: vllm
+    ports:
+      - "7979:8000"
+    volumes:
+      - /ddrive/models/Qwen3-VL-32B-Instruct-FP8:/models/Qwen3-VL-32B-Instruct-FP8
+    ipc: host
+    command: >
+      --model /models/Qwen3-VL-32B-Instruct-FP8
+      --gpu-memory-utilization 0.76
+      --max-model-len 8192
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - /ddrive/qdrant_storage:/qdrant/storage
+    restart: unless-stopped
+
+  app:
+    build: .
+    container_name: nuri-app
+    ports:
+      - "8080:8080"
+    volumes:
+      - /ddrive/models/nemotron-colembed-vl-4b-v2:/models/nemotron-colembed-vl-4b-v2
+      - /ddrive/models/bge-m3-korean:/models/bge-m3-korean
+      - /ddrive/models/bge-reranker-v2-m3:/models/bge-reranker-v2-m3
+    depends_on:
+      - qdrant
+      - vllm
+    restart: unless-stopped

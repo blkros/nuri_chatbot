@@ -1,0 +1,72 @@
+import logging
+
+import torch
+from PIL import Image
+
+from app.config import settings
+
+logger = logging.getLogger(__name__)
+
+# Lazy-loaded model singletons
+_nemotron_model = None
+_bge_model = None
+
+
+def get_nemotron_model():
+    """Nemotron ColEmbed V2 4B 모델 로드 (CPU, ColBERT multi-vector)."""
+    global _nemotron_model
+    if _nemotron_model is None:
+        from transformers import AutoModel
+
+        logger.info("Nemotron ColEmbed V2 로딩 중... (약 8GB RAM)")
+        _nemotron_model = AutoModel.from_pretrained(
+            settings.nemotron_model_path,
+            trust_remote_code=True,
+            torch_dtype=torch.float32,
+            device_map="cpu",
+        ).eval()
+        logger.info("Nemotron ColEmbed V2 로드 완료")
+    return _nemotron_model
+
+
+def get_bge_model():
+    """BGE-m3-ko 텍스트 임베딩 모델 로드 (CPU, 1024차원)."""
+    global _bge_model
+    if _bge_model is None:
+        from sentence_transformers import SentenceTransformer
+
+        logger.info("BGE-m3-ko 로딩 중... (약 1.5GB RAM)")
+        _bge_model = SentenceTransformer(
+            settings.bge_m3_ko_model_path, device="cpu"
+        )
+        logger.info("BGE-m3-ko 로드 완료")
+    return _bge_model
+
+
+def embed_images(images: list[Image.Image]) -> list[list[list[float]]]:
+    """페이지 이미지들을 Nemotron ColEmbed multi-vector로 변환.
+
+    Returns:
+        각 이미지에 대해 [num_tokens x 2560] 형태의 벡터 리스트
+    """
+    model = get_nemotron_model()
+    with torch.no_grad():
+        embeddings = model.forward_images(images, batch_size=2)
+
+    result = []
+    for emb in embeddings:
+        if isinstance(emb, torch.Tensor):
+            result.append(emb.cpu().tolist())
+        else:
+            result.append(emb)
+
+    logger.info("이미지 임베딩 완료: %d 페이지", len(result))
+    return result
+
+
+def embed_texts(texts: list[str]) -> list[list[float]]:
+    """텍스트들을 BGE-m3-ko 1024차원 벡터로 변환."""
+    model = get_bge_model()
+    embeddings = model.encode(texts, normalize_embeddings=True)
+    logger.info("텍스트 임베딩 완료: %d 건", len(texts))
+    return embeddings.tolist()

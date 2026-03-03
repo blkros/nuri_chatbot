@@ -13,7 +13,7 @@ def get_ocr_engine():
     if _ocr_engine is None:
         from paddleocr import PaddleOCR
 
-        _ocr_engine = PaddleOCR(use_angle_cls=True, lang="korean", show_log=False)
+        _ocr_engine = PaddleOCR(use_angle_cls=True, lang="korean")
         logger.info("PaddleOCR 한국어 엔진 로드 완료")
     return _ocr_engine
 

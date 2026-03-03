@@ -35,8 +35,6 @@ services:
     container_name: nuri-app
     ports:
       - "3857:8080"
-    environment:
-      - FLAGS_use_mkldnn=0
     volumes:
       - /ddrive/models/nemotron-colembed-vl-4b-v2:/models/nemotron-colembed-vl-4b-v2
       - /ddrive/models/bge-m3-korean:/models/bge-m3-korean

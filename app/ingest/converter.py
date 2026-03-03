@@ -1,6 +1,6 @@
 import logging
+import shutil
 import subprocess
-import tempfile
 from pathlib import Path
 
 from pdf2image import convert_from_path
@@ -10,8 +10,24 @@ logger = logging.getLogger(__name__)
 
 
 def convert_hwp_to_pdf(hwp_path: Path) -> Path:
-    """HWP 파일을 LibreOffice headless로 PDF 변환."""
-    output_dir = hwp_path.parent
+    """HWP 파일을 pyhwp(HTML) → LibreOffice(PDF) 2단계로 변환."""
+    html_dir = hwp_path.parent / f"{hwp_path.stem}_html"
+
+    # 1단계: HWP → HTML (hwp5html)
+    result = subprocess.run(
+        ["hwp5html", str(hwp_path), "--output", str(html_dir)],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"HWP→HTML 변환 실패: {result.stderr}")
+
+    xhtml_path = html_dir / "index.xhtml"
+    if not xhtml_path.exists():
+        raise FileNotFoundError(f"변환된 XHTML을 찾을 수 없음: {xhtml_path}")
+
+    # 2단계: XHTML → PDF (LibreOffice)
     result = subprocess.run(
         [
             "libreoffice",
@@ -19,19 +35,25 @@ def convert_hwp_to_pdf(hwp_path: Path) -> Path:
             "--convert-to",
             "pdf",
             "--outdir",
-            str(output_dir),
-            str(hwp_path),
+            str(hwp_path.parent),
+            str(xhtml_path),
         ],
         capture_output=True,
         text=True,
         timeout=120,
     )
-    if result.returncode != 0:
-        raise RuntimeError(f"LibreOffice 변환 실패: {result.stderr}")
 
-    pdf_path = output_dir / f"{hwp_path.stem}.pdf"
-    if not pdf_path.exists():
+    # LibreOffice가 index.pdf로 생성하므로 원래 파일명으로 변경
+    index_pdf = hwp_path.parent / "index.pdf"
+    pdf_path = hwp_path.parent / f"{hwp_path.stem}.pdf"
+
+    if index_pdf.exists():
+        index_pdf.rename(pdf_path)
+    elif not pdf_path.exists():
         raise FileNotFoundError(f"변환된 PDF를 찾을 수 없음: {pdf_path}")
+
+    # HTML 임시 디렉토리 정리
+    shutil.rmtree(html_dir, ignore_errors=True)
 
     logger.info("HWP→PDF 변환 완료: %s → %s", hwp_path.name, pdf_path.name)
     return pdf_path

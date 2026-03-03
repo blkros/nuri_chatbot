@@ -2,7 +2,7 @@ import logging
 import shutil
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 
 from app.config import settings
@@ -15,6 +15,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Nuri RAG Chatbot API")
+
+SUPPORTED_EXTENSIONS = {".hwp", ".hwpx", ".pdf", ".docx", ".doc", ".pptx", ".xlsx",
+                        ".png", ".jpg", ".jpeg", ".tiff", ".bmp"}
 
 
 @app.on_event("startup")
@@ -36,28 +39,45 @@ async def ingest_document(
     doc_type: str = Form(""),
 ):
     """문서 업로드 → 변환 → OCR → 임베딩 → Qdrant 저장."""
+    # 확장자 검증
+    suffix = Path(file.filename).suffix.lower()
+    if suffix not in SUPPORTED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"지원하지 않는 파일 형식: {suffix} (지원: {', '.join(sorted(SUPPORTED_EXTENSIONS))})",
+        )
+
+    # 파일 크기 검증
+    contents = await file.read()
+    if len(contents) > settings.max_upload_size_mb * 1024 * 1024:
+        raise HTTPException(
+            status_code=400,
+            detail=f"파일 크기 초과: 최대 {settings.max_upload_size_mb}MB",
+        )
+
     upload_dir = Path(settings.upload_dir)
     file_path = upload_dir / file.filename
+    temp_pdf_path = None
 
-    # 1. 파일 저장
+    # 파일 저장
     with open(file_path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
-    logger.info("파일 업로드: %s", file.filename)
+        f.write(contents)
+    logger.info("파일 업로드: %s (%d bytes)", file.filename, len(contents))
 
     try:
-        # 2. 문서 → 페이지 이미지
-        page_images, pdf_path = process_document(file_path)
+        # 1. 문서 → 페이지 이미지
+        page_images, temp_pdf_path = process_document(file_path)
 
-        # 3. OCR 텍스트 추출
+        # 2. OCR 텍스트 추출
         ocr_texts = [extract_text(img) for img in page_images]
 
-        # 4. 임베딩
+        # 3. 임베딩
         image_vectors = embed_images(page_images)
         text_vectors = embed_texts(
             [t if t.strip() else file.filename for t in ocr_texts]
         )
 
-        # 5. Qdrant 저장
+        # 4. Qdrant 저장
         metadata = {}
         if department:
             metadata["department"] = department
@@ -93,3 +113,5 @@ async def ingest_document(
         # 임시 파일 정리
         if file_path.exists():
             file_path.unlink()
+        if temp_pdf_path and temp_pdf_path.exists():
+            temp_pdf_path.unlink()

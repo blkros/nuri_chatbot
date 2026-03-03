@@ -66,11 +66,39 @@ def pdf_to_page_images(pdf_path: Path, dpi: int = 200) -> list[Image.Image]:
     return images
 
 
-def process_document(file_path: Path) -> tuple[list[Image.Image], Path]:
+def convert_office_to_pdf(file_path: Path) -> Path:
+    """DOCX/HWPX 등 오피스 파일을 LibreOffice로 PDF 변환."""
+    output_dir = file_path.parent
+    result = subprocess.run(
+        [
+            "libreoffice",
+            "--headless",
+            "--convert-to",
+            "pdf",
+            "--outdir",
+            str(output_dir),
+            str(file_path),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+
+    pdf_path = output_dir / f"{file_path.stem}.pdf"
+    if not pdf_path.exists():
+        raise FileNotFoundError(
+            f"LibreOffice 변환 실패: {file_path.name} → PDF (stderr: {result.stderr})"
+        )
+
+    logger.info("오피스→PDF 변환 완료: %s → %s", file_path.name, pdf_path.name)
+    return pdf_path
+
+
+def process_document(file_path: Path) -> tuple[list[Image.Image], Path | None]:
     """문서 파일을 페이지 이미지 리스트로 변환.
 
     Returns:
-        (page_images, pdf_path) - 원본이 HWP인 경우 변환된 PDF 경로 포함
+        (page_images, temp_pdf_path) - 변환된 임시 PDF 경로 (정리 필요, 원본 PDF면 None)
     """
     suffix = file_path.suffix.lower()
 
@@ -80,9 +108,13 @@ def process_document(file_path: Path) -> tuple[list[Image.Image], Path]:
         return images, pdf_path
     elif suffix == ".pdf":
         images = pdf_to_page_images(file_path)
-        return images, file_path
+        return images, None
+    elif suffix in (".docx", ".doc", ".hwpx", ".pptx", ".xlsx"):
+        pdf_path = convert_office_to_pdf(file_path)
+        images = pdf_to_page_images(pdf_path)
+        return images, pdf_path
     elif suffix in (".png", ".jpg", ".jpeg", ".tiff", ".bmp"):
         img = Image.open(file_path).convert("RGB")
-        return [img], file_path
+        return [img], None
     else:
         raise ValueError(f"지원하지 않는 파일 형식: {suffix}")

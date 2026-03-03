@@ -24,7 +24,7 @@ def extract_text(image: Image.Image) -> str:
 
     ocr = get_ocr_engine()
     img_array = np.array(image)
-    results = ocr.ocr(img_array, cls=True)
+    results = ocr.ocr(img_array)
 
     if not results or not results[0]:
         return ""

@@ -34,7 +34,7 @@ services:
     build: .
     container_name: nuri-app
     ports:
-      - "8080:8080"
+      - "3857:8080"
     volumes:
       - /ddrive/models/nemotron-colembed-vl-4b-v2:/models/nemotron-colembed-vl-4b-v2
       - /ddrive/models/bge-m3-korean:/models/bge-m3-korean

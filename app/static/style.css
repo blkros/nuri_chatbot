@@ -4,22 +4,27 @@
   box-sizing: border-box;
 }
 
-/* ── 커스텀 스크롤바 ── */
-::-webkit-scrollbar {
+/* ── 커스텀 스크롤바 (전역) ── */
+*::-webkit-scrollbar {
   width: 6px;
 }
 
-::-webkit-scrollbar-track {
+*::-webkit-scrollbar-track {
   background: transparent;
 }
 
-::-webkit-scrollbar-thumb {
+*::-webkit-scrollbar-thumb {
   background: #2a3a4a;
   border-radius: 3px;
 }
 
-::-webkit-scrollbar-thumb:hover {
+*::-webkit-scrollbar-thumb:hover {
   background: #3a4a5a;
+}
+
+* {
+  scrollbar-color: #2a3a4a transparent;
+  scrollbar-width: thin;
 }
 
 body {
@@ -27,8 +32,6 @@ body {
   background: #0f1923;
   color: #e0e6ed;
   min-height: 100vh;
-  scrollbar-color: #2a3a4a transparent;
-  scrollbar-width: thin;
 }
 
 /* ── 랜딩 (Google 스타일 중앙 배치) ── */

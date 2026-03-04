@@ -6,6 +6,8 @@ python-multipart>=0.0.9
 transformers>=4.57.2
 sentence-transformers>=3.0.0
 torch>=2.0.0
+datasets>=2.0.0
+accelerate>=0.30.0
 
 # Vector DB
 qdrant-client>=1.12.0

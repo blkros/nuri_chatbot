@@ -28,6 +28,8 @@ services:
       - "6334:6334"
     volumes:
       - /ddrive/qdrant_storage:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__MAX_REQUEST_SIZE_MB=128
     restart: unless-stopped
 
   app:

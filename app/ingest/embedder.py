@@ -11,6 +11,10 @@ logger = logging.getLogger(__name__)
 _nemotron_model = None
 _bge_model = None
 
+# Qdrant multivector 제한: 1,048,576 floats / 2560 dim = 409 tokens
+MAX_TOKENS_PER_IMAGE = 400
+EMBED_MAX_IMAGE_SIZE = 1280
+
 
 def get_nemotron_model():
     """Nemotron ColEmbed V2 4B 모델 로드 (CPU, ColBERT multi-vector)."""
@@ -43,6 +47,16 @@ def get_bge_model():
     return _bge_model
 
 
+def _resize_for_embedding(image: Image.Image) -> Image.Image:
+    """임베딩용 이미지 리사이즈 (토큰 수 제한)."""
+    w, h = image.size
+    if max(w, h) <= EMBED_MAX_IMAGE_SIZE:
+        return image
+    scale = EMBED_MAX_IMAGE_SIZE / max(w, h)
+    new_w, new_h = int(w * scale), int(h * scale)
+    return image.resize((new_w, new_h), Image.LANCZOS)
+
+
 def embed_images(images: list[Image.Image]) -> list[list[list[float]]]:
     """페이지 이미지들을 Nemotron ColEmbed multi-vector로 변환.
 
@@ -50,17 +64,22 @@ def embed_images(images: list[Image.Image]) -> list[list[list[float]]]:
         각 이미지에 대해 [num_tokens x 2560] 형태의 벡터 리스트
     """
     model = get_nemotron_model()
+    resized = [_resize_for_embedding(img) for img in images]
+
     with torch.no_grad():
-        embeddings = model.forward_images(images, batch_size=2)
+        embeddings = model.forward_images(resized, batch_size=2)
 
     result = []
     for emb in embeddings:
         if isinstance(emb, torch.Tensor):
+            if emb.shape[0] > MAX_TOKENS_PER_IMAGE:
+                emb = emb[:MAX_TOKENS_PER_IMAGE]
             result.append(emb.cpu().tolist())
         else:
-            result.append(emb)
+            result.append(emb[:MAX_TOKENS_PER_IMAGE])
 
-    logger.info("이미지 임베딩 완료: %d 페이지", len(result))
+    logger.info("이미지 임베딩 완료: %d 페이지 (토큰: %s)",
+                len(result), [len(r) for r in result])
     return result
 
 

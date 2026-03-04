@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from PIL import Image
 
 from app.config import settings
-from app.ingest.classifier import classify_document
+from app.ingest.classifier import classify_document_vlm
 from app.ingest.converter import process_document
 from app.ingest.embedder import (
     embed_images,
@@ -60,8 +60,6 @@ async def health():
 @app.post("/ingest")
 async def ingest_document(
     file: UploadFile = File(...),
-    department: str = Form(""),
-    doc_type: str = Form(""),
 ):
     """문서 업로드 → 변환 → 텍스트 추출 → 임베딩 → Qdrant 저장."""
     # 확장자 검증
@@ -104,21 +102,30 @@ async def ingest_document(
             img.save(str(img_path), "JPEG", quality=90)
             image_paths.append(str(img_path))
 
-        # 3. 임베딩
+        # 3. VLM 자동 분류 (임베딩 전에 실행 → prefix에 활용)
+        all_text = "\n".join(page_texts[:3])
+        classification = classify_document_vlm(
+            page_image=page_images[0],
+            text_content=all_text,
+            file_name=file.filename,
+        )
+        department = classification.get("department", "기타")
+        doc_type = classification.get("doc_type", "기타")
+        summary = classification.get("summary", "")
+
+        # 4. 임베딩 (텍스트에 메타데이터 prefix 추가)
+        prefix = f"[{department}/{doc_type}] {file.filename} | "
         image_vectors = embed_images(page_images)
         text_vectors = embed_texts(
-            [t if t.strip() else file.filename for t in page_texts]
+            [prefix + t if t.strip() else prefix + file.filename for t in page_texts]
         )
 
-        # 4. 자동 분류 (사용자가 카테고리를 지정하지 않은 경우)
-        if not department:
-            all_text = "\n".join(page_texts[:3])  # 앞 3페이지 텍스트
-            department = classify_document(file.filename, all_text)
-
         # 5. Qdrant 저장
-        metadata = {"department": department}
-        if doc_type:
-            metadata["doc_type"] = doc_type
+        metadata = {
+            "department": department,
+            "doc_type": doc_type,
+            "summary": summary,
+        }
 
         point_ids = []
         for i, (img_vec, txt_vec, page_text, img_path) in enumerate(
@@ -140,6 +147,8 @@ async def ingest_document(
             "file_name": file.filename,
             "pages": len(page_images),
             "department": department,
+            "doc_type": doc_type,
+            "summary": summary,
             "point_ids": point_ids,
         }
 
@@ -160,8 +169,6 @@ async def ingest_document(
 @app.post("/search")
 def search_documents(
     question: str = Form(...),
-    department: str = Form(""),
-    doc_type: str = Form(""),
     limit: int = Form(10),
 ):
     """질문으로 문서 검색 (하이브리드 검색 + 리랭킹, VLM 답변 없음)."""
@@ -175,8 +182,6 @@ def search_documents(
             text_query_vector=text_vector,
             image_query_vectors=image_vectors,
             limit=limit,
-            department=department or None,
-            doc_type=doc_type or None,
         )
 
         if not results:
@@ -203,8 +208,6 @@ def search_documents(
 @app.post("/ask")
 def ask_question(
     question: str = Form(...),
-    department: str = Form(""),
-    doc_type: str = Form(""),
     top_k: int = Form(3),
 ):
     """질문 → 검색 → 리랭킹 → VLM 답변 생성 (전체 RAG 파이프라인)."""
@@ -218,8 +221,6 @@ def ask_question(
             text_query_vector=text_vector,
             image_query_vectors=image_vectors,
             limit=max(top_k * 2, 10),
-            department=department or None,
-            doc_type=doc_type or None,
         )
 
         if not results:

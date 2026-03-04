@@ -24,8 +24,11 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Nuri RAG Chatbot API")
 
-SUPPORTED_EXTENSIONS = {".hwp", ".hwpx", ".pdf", ".docx", ".doc", ".pptx", ".xlsx", ".xls",
-                        ".png", ".jpg", ".jpeg", ".tiff", ".bmp"}
+# 문서 포맷
+OFFICE_EXTENSIONS = {".hwp", ".hwpx", ".docx", ".doc", ".pptx", ".ppt",
+                     ".xlsx", ".xls", ".csv", ".odt", ".ods", ".odp", ".rtf"}
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".tiff", ".bmp", ".gif", ".webp"}
+SUPPORTED_EXTENSIONS = OFFICE_EXTENSIONS | IMAGE_EXTENSIONS | {".pdf"}
 
 
 @app.on_event("startup")

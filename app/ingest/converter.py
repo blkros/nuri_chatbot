@@ -109,11 +109,12 @@ def process_document(file_path: Path) -> tuple[list[Image.Image], Path | None]:
     elif suffix == ".pdf":
         images = pdf_to_page_images(file_path)
         return images, None
-    elif suffix in (".docx", ".doc", ".hwpx", ".pptx", ".xlsx"):
+    elif suffix in (".docx", ".doc", ".hwpx", ".pptx", ".ppt",
+                     ".xlsx", ".xls", ".csv", ".odt", ".ods", ".odp", ".rtf"):
         pdf_path = convert_office_to_pdf(file_path)
         images = pdf_to_page_images(pdf_path)
         return images, pdf_path
-    elif suffix in (".png", ".jpg", ".jpeg", ".tiff", ".bmp"):
+    elif suffix in (".png", ".jpg", ".jpeg", ".tiff", ".bmp", ".gif", ".webp"):
         img = Image.open(file_path).convert("RGB")
         return [img], None
     else:

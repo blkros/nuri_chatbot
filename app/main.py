@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Nuri RAG Chatbot API")
 
-SUPPORTED_EXTENSIONS = {".hwp", ".hwpx", ".pdf", ".docx", ".doc", ".pptx", ".xlsx",
+SUPPORTED_EXTENSIONS = {".hwp", ".hwpx", ".pdf", ".docx", ".doc", ".pptx", ".xlsx", ".xls",
                         ".png", ".jpg", ".jpeg", ".tiff", ".bmp"}
 
 

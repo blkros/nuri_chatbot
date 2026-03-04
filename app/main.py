@@ -14,7 +14,6 @@ from app.ingest.embedder import (
     embed_query_text,
     embed_texts,
 )
-from app.ingest.ocr import extract_text
 from app.search.reranker import rerank
 from app.search.vllm_client import generate_answer
 from app.vectordb.qdrant_client import ensure_collection, search_pages, upsert_page
@@ -52,7 +51,7 @@ async def ingest_document(
     department: str = Form(""),
     doc_type: str = Form(""),
 ):
-    """문서 업로드 → 변환 → OCR → 임베딩 → Qdrant 저장."""
+    """문서 업로드 → 변환 → 텍스트 추출 → 임베딩 → Qdrant 저장."""
     # 확장자 검증
     suffix = Path(file.filename).suffix.lower()
     if suffix not in SUPPORTED_EXTENSIONS:
@@ -79,8 +78,8 @@ async def ingest_document(
     logger.info("파일 업로드: %s (%d bytes)", file.filename, len(contents))
 
     try:
-        # 1. 문서 → 페이지 이미지
-        page_images, temp_pdf_path = process_document(file_path)
+        # 1. 문서 → 페이지 이미지 + 텍스트 추출
+        page_images, temp_pdf_path, page_texts = process_document(file_path)
 
         # 2. 페이지 이미지를 디스크에 저장
         doc_id = str(uuid4())
@@ -93,13 +92,10 @@ async def ingest_document(
             img.save(str(img_path), "JPEG", quality=90)
             image_paths.append(str(img_path))
 
-        # 3. OCR 텍스트 추출
-        ocr_texts = [extract_text(img) for img in page_images]
-
-        # 4. 임베딩
+        # 3. 임베딩
         image_vectors = embed_images(page_images)
         text_vectors = embed_texts(
-            [t if t.strip() else file.filename for t in ocr_texts]
+            [t if t.strip() else file.filename for t in page_texts]
         )
 
         # 5. Qdrant 저장
@@ -110,15 +106,15 @@ async def ingest_document(
             metadata["doc_type"] = doc_type
 
         point_ids = []
-        for i, (img_vec, txt_vec, ocr_text, img_path) in enumerate(
-            zip(image_vectors, text_vectors, ocr_texts, image_paths)
+        for i, (img_vec, txt_vec, page_text, img_path) in enumerate(
+            zip(image_vectors, text_vectors, page_texts, image_paths)
         ):
             pid = upsert_page(
                 file_name=file.filename,
                 page_number=i + 1,
                 image_vectors=img_vec,
                 text_vector=txt_vec,
-                ocr_text=ocr_text,
+                ocr_text=page_text,
                 image_path=img_path,
                 metadata=metadata,
             )

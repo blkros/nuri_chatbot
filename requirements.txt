@@ -15,6 +15,7 @@ qdrant-client>=1.12.0
 # Document processing
 pdf2image>=1.17.0
 Pillow>=10.0.0
+pdfplumber>=0.11.0
 
 # OCR
 paddlepaddle>=3.2.2

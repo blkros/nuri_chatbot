@@ -94,28 +94,41 @@ def convert_office_to_pdf(file_path: Path) -> Path:
     return pdf_path
 
 
-def process_document(file_path: Path) -> tuple[list[Image.Image], Path | None]:
-    """문서 파일을 페이지 이미지 리스트로 변환.
+def process_document(
+    file_path: Path,
+) -> tuple[list[Image.Image], Path | None, list[str]]:
+    """문서 파일을 페이지 이미지 + 텍스트로 변환.
 
     Returns:
-        (page_images, temp_pdf_path) - 변환된 임시 PDF 경로 (정리 필요, 원본 PDF면 None)
+        (page_images, temp_pdf_path, page_texts)
+        - temp_pdf_path: 변환된 임시 PDF 경로 (정리 필요, 원본 PDF면 None)
+        - page_texts: 페이지별 추출 텍스트 (pdfplumber 또는 OCR)
     """
+    from app.ingest.text_extractor import (
+        extract_text_from_image,
+        extract_texts_from_pdf,
+    )
+
     suffix = file_path.suffix.lower()
 
     if suffix == ".hwp":
         pdf_path = convert_hwp_to_pdf(file_path)
         images = pdf_to_page_images(pdf_path)
-        return images, pdf_path
+        texts = extract_texts_from_pdf(pdf_path)
+        return images, pdf_path, texts
     elif suffix == ".pdf":
         images = pdf_to_page_images(file_path)
-        return images, None
+        texts = extract_texts_from_pdf(file_path)
+        return images, None, texts
     elif suffix in (".docx", ".doc", ".hwpx", ".pptx", ".ppt",
                      ".xlsx", ".xls", ".csv", ".odt", ".ods", ".odp", ".rtf"):
         pdf_path = convert_office_to_pdf(file_path)
         images = pdf_to_page_images(pdf_path)
-        return images, pdf_path
+        texts = extract_texts_from_pdf(pdf_path)
+        return images, pdf_path, texts
     elif suffix in (".png", ".jpg", ".jpeg", ".tiff", ".bmp", ".gif", ".webp"):
         img = Image.open(file_path).convert("RGB")
-        return [img], None
+        text = extract_text_from_image(img)
+        return [img], None, [text]
     else:
         raise ValueError(f"지원하지 않는 파일 형식: {suffix}")

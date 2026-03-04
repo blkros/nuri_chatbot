@@ -15,6 +15,41 @@ const bottomFileNameSpan = document.getElementById("bottom-file-name");
 // 상태
 let pendingFile = null;
 let selectedDept = "";
+let userManuallySelectedDept = false;
+
+// ── 파일명 기반 자동 분류 (프론트엔드) ──
+
+const DEPT_KEYWORDS = {
+  "인사": ["인사", "급여", "채용", "퇴직", "복리후생", "근태", "연봉", "승진", "교육", "휴가", "취업규칙"],
+  "재무": ["재무", "회계", "결산", "예산", "세무", "자금", "원가", "결제", "전결", "위임전결"],
+  "개발": ["개발", "R&D", "연구", "기술", "소프트웨어", "시스템", "프로젝트", "설계", "특허"],
+  "영업": ["영업", "매출", "고객", "판매", "계약", "견적", "수주", "거래처", "납품", "마케팅"],
+  "경영": ["경영", "전략", "기획", "이사회", "정관", "조직", "규정", "내규", "지침", "사업계획"],
+};
+
+function guessCategory(fileName) {
+  const name = fileName.replace(/\.[^.]+$/, "").toLowerCase();
+  let best = "";
+  let bestScore = 0;
+  for (const [dept, keywords] of Object.entries(DEPT_KEYWORDS)) {
+    let score = 0;
+    for (const kw of keywords) {
+      if (name.includes(kw.toLowerCase())) score += 1;
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      best = dept;
+    }
+  }
+  return bestScore > 0 ? best : "";
+}
+
+function selectChip(dept) {
+  selectedDept = dept;
+  document.querySelectorAll(".chip").forEach((c) => {
+    c.classList.toggle("active", c.dataset.dept === dept);
+  });
+}
 
 // ── 카테고리 칩 ──
 
@@ -22,14 +57,8 @@ document.querySelectorAll(".chip-row").forEach((row) => {
   row.addEventListener("click", (e) => {
     const chip = e.target.closest(".chip");
     if (!chip) return;
-
-    const dept = chip.dataset.dept;
-    selectedDept = dept;
-
-    // 모든 칩 행 동기화
-    document.querySelectorAll(".chip").forEach((c) => {
-      c.classList.toggle("active", c.dataset.dept === dept);
-    });
+    userManuallySelectedDept = true;
+    selectChip(chip.dataset.dept);
   });
 });
 
@@ -52,6 +81,15 @@ fileInput.addEventListener("change", () => {
     bottomFileNameSpan.textContent = file.name;
     bottomFileBadge.classList.remove("hidden");
   }
+
+  // 파일명 기반 자동 카테고리 추천 (사용자가 수동 선택 안 했을 때만)
+  if (!userManuallySelectedDept) {
+    const guessed = guessCategory(file.name);
+    if (guessed) {
+      selectChip(guessed);
+      showToast(`"${guessed}" 카테고리로 자동 분류되었습니다`, "info");
+    }
+  }
 });
 
 function clearFile() {
@@ -59,6 +97,7 @@ function clearFile() {
   fileInput.value = "";
   fileBadge.classList.add("hidden");
   bottomFileBadge.classList.add("hidden");
+  userManuallySelectedDept = false;
 }
 
 document.getElementById("file-remove").addEventListener("click", clearFile);
@@ -203,12 +242,13 @@ async function doSearch(question) {
 
       showToast(`${file.name} 업로드 중...`, "info");
       const ingestResult = await uploadFile(file);
-      showToast(`${ingestResult.file_name} 인덱싱 완료 (${ingestResult.pages}페이지)`, "success");
+      const deptLabel = ingestResult.department || "기타";
+      showToast(`${ingestResult.file_name} → [${deptLabel}] 인덱싱 완료 (${ingestResult.pages}페이지)`, "success");
 
       // 질문 없이 파일만 업로드한 경우
       if (!hasQuestion) {
         addAIMessage(
-          `<strong>${escapeHtml(ingestResult.file_name)}</strong> 문서가 등록되었습니다 (${ingestResult.pages}페이지).<br>이제 이 문서에 대해 질문할 수 있습니다.`,
+          `<strong>${escapeHtml(ingestResult.file_name)}</strong> 문서가 <strong>[${escapeHtml(deptLabel)}]</strong> 카테고리로 등록되었습니다 (${ingestResult.pages}페이지).<br>이제 이 문서에 대해 질문할 수 있습니다.`,
           ""
         );
         bottomInput.focus();

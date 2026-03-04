@@ -4,11 +4,31 @@
   box-sizing: border-box;
 }
 
+/* ── 커스텀 스크롤바 ── */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #2a3a4a;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #3a4a5a;
+}
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background: #0f1923;
   color: #e0e6ed;
   min-height: 100vh;
+  scrollbar-color: #2a3a4a transparent;
+  scrollbar-width: thin;
 }
 
 /* ── 랜딩 (Google 스타일 중앙 배치) ── */
@@ -35,7 +55,7 @@ body {
 .logo {
   font-size: 3.5rem;
   font-weight: 300;
-  color: #4ecdc4;
+  color: #5b9bf0;
   margin-bottom: 12px;
   letter-spacing: -1px;
 }
@@ -59,8 +79,8 @@ body {
 }
 
 .search-box:focus-within {
-  border-color: #4ecdc4;
-  box-shadow: 0 0 0 3px rgba(78, 205, 196, 0.15);
+  border-color: #5b9bf0;
+  box-shadow: 0 0 0 3px rgba(91, 155, 240, 0.15);
 }
 
 .search-box input {
@@ -95,8 +115,8 @@ body {
 }
 
 .attach-btn:hover {
-  border-color: #4ecdc4;
-  color: #4ecdc4;
+  border-color: #5b9bf0;
+  color: #5b9bf0;
 }
 
 .attach-btn-sm {
@@ -112,7 +132,7 @@ body {
   justify-content: center;
   width: 44px;
   height: 44px;
-  background: #4ecdc4;
+  background: #5b9bf0;
   border: none;
   border-radius: 50%;
   color: #0f1923;
@@ -122,7 +142,7 @@ body {
 }
 
 .search-btn:hover {
-  background: #45b8b0;
+  background: #4a8ae0;
 }
 
 .search-btn-sm {
@@ -141,7 +161,7 @@ body {
   border: 1px solid #2a3a4a;
   border-radius: 20px;
   font-size: 0.82rem;
-  color: #4ecdc4;
+  color: #5b9bf0;
 }
 
 .file-badge-bottom {
@@ -192,14 +212,14 @@ body {
 }
 
 .chip:hover {
-  border-color: #4ecdc4;
+  border-color: #5b9bf0;
   color: #b0c0d0;
 }
 
 .chip.active {
-  background: rgba(78, 205, 196, 0.15);
-  border-color: #4ecdc4;
-  color: #4ecdc4;
+  background: rgba(91, 155, 240, 0.15);
+  border-color: #5b9bf0;
+  color: #5b9bf0;
 }
 
 /* ── 대화 영역 레이아웃 ── */
@@ -233,7 +253,7 @@ body {
 .top-logo {
   font-size: 1.3rem;
   font-weight: 300;
-  color: #4ecdc4;
+  color: #5b9bf0;
   cursor: pointer;
   white-space: nowrap;
 }
@@ -296,7 +316,7 @@ body {
 }
 
 .msg-ai .bubble strong {
-  color: #4ecdc4;
+  color: #5b9bf0;
 }
 
 /* ── 출처 태그 (버블 아래) ── */
@@ -319,7 +339,7 @@ body {
   padding: 3px 10px;
   margin: 3px 3px 3px 0;
   font-size: 0.78rem;
-  color: #5a8a7a;
+  color: #6a9ad0;
 }
 
 /* ── 로딩 (AI 타이핑 인디케이터) ── */
@@ -350,7 +370,7 @@ body {
 .typing-dots span {
   width: 8px;
   height: 8px;
-  background: #4ecdc4;
+  background: #5b9bf0;
   border-radius: 50%;
   animation: bounce 1.4s ease-in-out infinite;
 }
@@ -384,8 +404,8 @@ body {
 }
 
 .bottom-input-box:focus-within {
-  border-color: #4ecdc4;
-  box-shadow: 0 0 0 3px rgba(78, 205, 196, 0.15);
+  border-color: #5b9bf0;
+  box-shadow: 0 0 0 3px rgba(91, 155, 240, 0.15);
 }
 
 .bottom-input-box input {
@@ -425,7 +445,7 @@ body {
   max-width: 360px;
 }
 
-.toast.success { border-color: #4ecdc4; }
+.toast.success { border-color: #4aca8a; }
 .toast.error   { border-color: #e05555; }
 .toast.info    { border-color: #5a8abf; }
 

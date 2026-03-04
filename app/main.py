@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from PIL import Image
 
 from app.config import settings
+from app.ingest.classifier import classify_document
 from app.ingest.converter import process_document
 from app.ingest.embedder import (
     embed_images,
@@ -109,10 +110,13 @@ async def ingest_document(
             [t if t.strip() else file.filename for t in page_texts]
         )
 
+        # 4. 자동 분류 (사용자가 카테고리를 지정하지 않은 경우)
+        if not department:
+            all_text = "\n".join(page_texts[:3])  # 앞 3페이지 텍스트
+            department = classify_document(file.filename, all_text)
+
         # 5. Qdrant 저장
-        metadata = {}
-        if department:
-            metadata["department"] = department
+        metadata = {"department": department}
         if doc_type:
             metadata["doc_type"] = doc_type
 
@@ -135,6 +139,7 @@ async def ingest_document(
             "status": "success",
             "file_name": file.filename,
             "pages": len(page_images),
+            "department": department,
             "point_ids": point_ids,
         }
 

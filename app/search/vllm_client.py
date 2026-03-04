@@ -8,9 +8,23 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+# Qwen3-VL: 28×28 pixels = 1 token. 1024px 이미지 ≈ ~1,300 tokens
+VLM_MAX_IMAGE_SIZE = 1024
+
+
+def _resize_for_vlm(image: Image.Image) -> Image.Image:
+    """VLM 전송용 이미지 리사이즈 (토큰 수 제한)."""
+    w, h = image.size
+    if max(w, h) <= VLM_MAX_IMAGE_SIZE:
+        return image
+    scale = VLM_MAX_IMAGE_SIZE / max(w, h)
+    new_w, new_h = int(w * scale), int(h * scale)
+    return image.resize((new_w, new_h), Image.LANCZOS)
+
 
 def _image_to_base64(image: Image.Image, quality: int = 85) -> str:
-    """PIL 이미지를 JPEG base64 문자열로 변환."""
+    """PIL 이미지를 JPEG base64 문자열로 변환 (리사이즈 포함)."""
+    image = _resize_for_vlm(image)
     buf = io.BytesIO()
     image.save(buf, format="JPEG", quality=quality)
     return base64.b64encode(buf.getvalue()).decode("utf-8")

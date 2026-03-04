@@ -3,7 +3,7 @@ uvicorn>=0.30.0
 python-multipart>=0.0.9
 
 # Embedding models
-transformers>=4.57.2
+transformers>=4.57.2,<5.0.0
 sentence-transformers>=3.0.0
 torch>=2.0.0
 datasets>=2.0.0

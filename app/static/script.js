@@ -12,8 +12,26 @@ const fileNameSpan = document.getElementById("file-name");
 const bottomFileBadge = document.getElementById("bottom-file-badge");
 const bottomFileNameSpan = document.getElementById("bottom-file-name");
 
-// 첨부 파일 상태
+// 상태
 let pendingFile = null;
+let selectedDept = "";
+
+// ── 카테고리 칩 ──
+
+document.querySelectorAll(".chip-row").forEach((row) => {
+  row.addEventListener("click", (e) => {
+    const chip = e.target.closest(".chip");
+    if (!chip) return;
+
+    const dept = chip.dataset.dept;
+    selectedDept = dept;
+
+    // 모든 칩 행 동기화
+    document.querySelectorAll(".chip").forEach((c) => {
+      c.classList.toggle("active", c.dataset.dept === dept);
+    });
+  });
+});
 
 // ── 파일 첨부 ──
 
@@ -27,7 +45,7 @@ fileInput.addEventListener("change", () => {
   pendingFile = file;
 
   // 현재 보이는 화면에 따라 뱃지 표시
-  if (chatArea.classList.contains("hidden")) {
+  if (!chatArea.classList.contains("visible")) {
     fileNameSpan.textContent = file.name;
     fileBadge.classList.remove("hidden");
   } else {
@@ -101,6 +119,9 @@ function escapeHtml(text) {
 async function uploadFile(file) {
   const formData = new FormData();
   formData.append("file", file);
+  if (selectedDept) {
+    formData.append("department", selectedDept);
+  }
 
   const res = await fetch(`${API_BASE}/ingest`, {
     method: "POST",
@@ -200,6 +221,9 @@ async function doSearch(question) {
     // 2. 질문 검색
     const formData = new FormData();
     formData.append("question", question);
+    if (selectedDept) {
+      formData.append("department", selectedDept);
+    }
 
     const res = await fetch(`${API_BASE}/ask`, {
       method: "POST",
@@ -265,13 +289,11 @@ function showToast(message, type = "info") {
 // ── 초기 화면으로 복귀 ──
 
 function resetUI() {
-  // 채팅 영역 숨기기
   chatArea.classList.remove("show");
   setTimeout(() => {
     chatArea.classList.remove("visible");
     chatMessages.innerHTML = "";
 
-    // 랜딩 복귀
     landing.classList.remove("gone", "slide-out");
     queryInput.value = "";
     clearFile();

@@ -25,6 +25,15 @@
           </svg>
         </button>
       </div>
+      <div class="chip-row" id="landing-chips">
+        <button class="chip active" data-dept="">전체</button>
+        <button class="chip" data-dept="인사">인사</button>
+        <button class="chip" data-dept="개발">개발</button>
+        <button class="chip" data-dept="영업">영업</button>
+        <button class="chip" data-dept="경영">경영</button>
+        <button class="chip" data-dept="재무">재무</button>
+        <button class="chip" data-dept="기타">기타</button>
+      </div>
       <div id="file-badge" class="file-badge hidden">
         <span id="file-name"></span>
         <button id="file-remove" class="file-remove" title="제거">&times;</button>
@@ -32,7 +41,7 @@
     </div>
 
     <!-- 대화 영역 -->
-    <div id="chat-area" class="chat-area hidden">
+    <div id="chat-area" class="chat-area">
       <!-- 상단 바 -->
       <div class="top-bar">
         <span class="top-logo" onclick="resetUI()">Nuri Chatbot</span>
@@ -55,6 +64,15 @@
               <path d="M5 12h14M12 5l7 7-7 7"/>
             </svg>
           </button>
+        </div>
+        <div class="chip-row chip-row-bottom" id="bottom-chips">
+          <button class="chip active" data-dept="">전체</button>
+          <button class="chip" data-dept="인사">인사</button>
+          <button class="chip" data-dept="개발">개발</button>
+          <button class="chip" data-dept="영업">영업</button>
+          <button class="chip" data-dept="경영">경영</button>
+          <button class="chip" data-dept="재무">재무</button>
+          <button class="chip" data-dept="기타">기타</button>
         </div>
         <div id="bottom-file-badge" class="file-badge file-badge-bottom hidden">
           <span id="bottom-file-name"></span>

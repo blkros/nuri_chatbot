@@ -2,28 +2,202 @@ const API_BASE = window.location.origin;
 
 // DOM 요소
 const landing = document.getElementById("landing");
-const resultArea = document.getElementById("result-area");
+const chatArea = document.getElementById("chat-area");
+const chatMessages = document.getElementById("chat-messages");
 const queryInput = document.getElementById("query-input");
-const topQueryInput = document.getElementById("top-query-input");
-const loading = document.getElementById("loading");
-const answerBox = document.getElementById("answer-box");
-const answerText = document.getElementById("answer-text");
-const sources = document.getElementById("sources");
+const bottomInput = document.getElementById("bottom-query-input");
+const fileInput = document.getElementById("file-input");
+const fileBadge = document.getElementById("file-badge");
+const fileNameSpan = document.getElementById("file-name");
+const bottomFileBadge = document.getElementById("bottom-file-badge");
+const bottomFileNameSpan = document.getElementById("bottom-file-name");
 
-// 검색 실행
+// 첨부 파일 상태
+let pendingFile = null;
+
+// ── 파일 첨부 ──
+
+function openFilePicker() {
+  fileInput.click();
+}
+
+fileInput.addEventListener("change", () => {
+  const file = fileInput.files[0];
+  if (!file) return;
+  pendingFile = file;
+
+  // 현재 보이는 화면에 따라 뱃지 표시
+  if (chatArea.classList.contains("hidden")) {
+    fileNameSpan.textContent = file.name;
+    fileBadge.classList.remove("hidden");
+  } else {
+    bottomFileNameSpan.textContent = file.name;
+    bottomFileBadge.classList.remove("hidden");
+  }
+});
+
+function clearFile() {
+  pendingFile = null;
+  fileInput.value = "";
+  fileBadge.classList.add("hidden");
+  bottomFileBadge.classList.add("hidden");
+}
+
+document.getElementById("file-remove").addEventListener("click", clearFile);
+document.getElementById("bottom-file-remove").addEventListener("click", clearFile);
+
+document.getElementById("attach-btn").addEventListener("click", openFilePicker);
+document.getElementById("bottom-attach-btn").addEventListener("click", openFilePicker);
+
+// ── 메시지 추가 헬퍼 ──
+
+function addUserMessage(text) {
+  const div = document.createElement("div");
+  div.className = "msg msg-user";
+  div.innerHTML = `<div class="bubble">${escapeHtml(text)}</div>`;
+  chatMessages.appendChild(div);
+  scrollToBottom();
+}
+
+function addAIMessage(html, sourcesHtml) {
+  const div = document.createElement("div");
+  div.className = "msg msg-ai";
+  let inner = `<div class="bubble-wrap"><div class="bubble">${html}</div>`;
+  if (sourcesHtml) {
+    inner += `<div class="msg-sources">${sourcesHtml}</div>`;
+  }
+  inner += `</div>`;
+  div.innerHTML = inner;
+  chatMessages.appendChild(div);
+  scrollToBottom();
+}
+
+function addLoadingIndicator() {
+  const div = document.createElement("div");
+  div.className = "msg msg-loading";
+  div.id = "loading-msg";
+  div.innerHTML = `<div class="bubble"><div class="typing-dots"><span></span><span></span><span></span></div><span>답변을 생성하고 있습니다...</span></div>`;
+  chatMessages.appendChild(div);
+  scrollToBottom();
+}
+
+function removeLoadingIndicator() {
+  const el = document.getElementById("loading-msg");
+  if (el) el.remove();
+}
+
+function scrollToBottom() {
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+function escapeHtml(text) {
+  const div = document.createElement("div");
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// ── 파일 업로드 (ingest) ──
+
+async function uploadFile(file) {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const res = await fetch(`${API_BASE}/ingest`, {
+    method: "POST",
+    body: formData,
+  });
+
+  const data = await res.json();
+  if (!res.ok || data.status === "error") {
+    throw new Error(data.detail || "업로드 실패");
+  }
+  return data;
+}
+
+// ── 화면 전환 애니메이션 ──
+
+let isTransitioning = false;
+
+function transitionToChat() {
+  return new Promise((resolve) => {
+    if (chatArea.classList.contains("visible")) {
+      resolve();
+      return;
+    }
+
+    isTransitioning = true;
+
+    // 1. 랜딩 위로 슬라이드 아웃
+    landing.classList.add("slide-out");
+
+    // 2. 채팅 영역 준비 (보이지만 투명)
+    setTimeout(() => {
+      chatArea.classList.add("visible");
+
+      // 3. 다음 프레임에서 채팅 페이드인
+      requestAnimationFrame(() => {
+        chatArea.classList.add("show");
+      });
+    }, 300);
+
+    // 4. 트랜지션 완료 후 랜딩 완전 제거
+    setTimeout(() => {
+      landing.classList.add("gone");
+      isTransitioning = false;
+      resolve();
+    }, 700);
+  });
+}
+
+// ── 검색/대화 실행 ──
+
 async function doSearch(question) {
-  if (!question.trim()) return;
+  const hasQuestion = question.trim().length > 0;
+  const hasFile = pendingFile !== null;
 
-  // UI 전환: 랜딩 → 결과
-  landing.classList.add("hidden");
-  resultArea.classList.remove("hidden");
-  topQueryInput.value = question;
+  if (!hasQuestion && !hasFile) return;
+  if (isTransitioning) return;
 
-  // 로딩 표시
-  loading.classList.remove("hidden");
-  answerBox.classList.add("hidden");
+  // 랜딩 → 채팅 전환 (애니메이션)
+  await transitionToChat();
+
+  // 사용자 메시지 표시
+  if (hasQuestion) {
+    addUserMessage(question);
+  }
+
+  // 입력 초기화
+  queryInput.value = "";
+  bottomInput.value = "";
 
   try {
+    // 1. 첨부 파일이 있으면 먼저 인제스트
+    if (hasFile) {
+      const file = pendingFile;
+      clearFile();
+
+      if (hasQuestion) {
+        addLoadingIndicator();
+      }
+
+      showToast(`${file.name} 업로드 중...`, "info");
+      const ingestResult = await uploadFile(file);
+      showToast(`${ingestResult.file_name} 인덱싱 완료 (${ingestResult.pages}페이지)`, "success");
+
+      // 질문 없이 파일만 업로드한 경우
+      if (!hasQuestion) {
+        addAIMessage(
+          `<strong>${escapeHtml(ingestResult.file_name)}</strong> 문서가 등록되었습니다 (${ingestResult.pages}페이지).<br>이제 이 문서에 대해 질문할 수 있습니다.`,
+          ""
+        );
+        bottomInput.focus();
+        return;
+      }
+    } else {
+      addLoadingIndicator();
+    }
+
+    // 2. 질문 검색
     const formData = new FormData();
     formData.append("question", question);
 
@@ -33,50 +207,81 @@ async function doSearch(question) {
     });
 
     const data = await res.json();
+    removeLoadingIndicator();
 
     if (data.answer) {
-      answerText.innerHTML = formatAnswer(data.answer);
-      sources.innerHTML = formatSources(data.sources || []);
-      answerBox.classList.remove("hidden");
+      addAIMessage(
+        formatAnswer(data.answer),
+        formatSources(data.sources || [])
+      );
     } else {
-      answerText.textContent = data.detail || "답변을 생성할 수 없습니다.";
-      sources.innerHTML = "";
-      answerBox.classList.remove("hidden");
+      addAIMessage(escapeHtml(data.detail || "답변을 생성할 수 없습니다."), "");
     }
   } catch (err) {
-    answerText.textContent = "서버 연결에 실패했습니다. 잠시 후 다시 시도해주세요.";
-    sources.innerHTML = "";
-    answerBox.classList.remove("hidden");
-  } finally {
-    loading.classList.add("hidden");
+    removeLoadingIndicator();
+    if (err.message.includes("업로드")) {
+      showToast(err.message, "error");
+      if (!hasQuestion) return;
+    }
+    addAIMessage("서버 연결에 실패했습니다. 잠시 후 다시 시도해주세요.", "");
   }
+
+  bottomInput.focus();
 }
 
-// 마크다운 기본 포맷 (bold, 출처 태그)
+// ── 마크다운 기본 포맷 ──
+
 function formatAnswer(text) {
   return text
     .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
     .replace(/\n/g, "<br>");
 }
 
-// 출처 표시
+// ── 출처 표시 ──
+
 function formatSources(srcList) {
   if (!srcList.length) return "";
   const tags = srcList
-    .map((s) => `<span class="source-tag">${s.file_name} ${s.page_number}p</span>`)
+    .map((s) => `<span class="source-tag">${escapeHtml(s.file_name)} ${s.page_number}p</span>`)
     .join("");
-  return `<div style="color:#5a6a7a;font-size:0.8rem;margin-bottom:6px;">참조 문서</div>${tags}`;
+  return `<div class="msg-sources-label">참조 문서</div>${tags}`;
 }
 
-// 초기 화면으로 복귀
+// ── 토스트 알림 ──
+
+function showToast(message, type = "info") {
+  const container = document.getElementById("toast-container");
+  const toast = document.createElement("div");
+  toast.className = `toast ${type}`;
+  toast.textContent = message;
+  container.appendChild(toast);
+  setTimeout(() => {
+    toast.style.opacity = "0";
+    toast.style.transition = "opacity 0.3s";
+    setTimeout(() => toast.remove(), 300);
+  }, 4000);
+}
+
+// ── 초기 화면으로 복귀 ──
+
 function resetUI() {
-  resultArea.classList.add("hidden");
-  landing.classList.remove("hidden");
-  queryInput.value = "";
-  queryInput.focus();
+  // 채팅 영역 숨기기
+  chatArea.classList.remove("show");
+  setTimeout(() => {
+    chatArea.classList.remove("visible");
+    chatMessages.innerHTML = "";
+
+    // 랜딩 복귀
+    landing.classList.remove("gone", "slide-out");
+    queryInput.value = "";
+    clearFile();
+    queryInput.focus();
+  }, 300);
 }
 
-// 이벤트 바인딩
+// ── 이벤트 바인딩 ──
+
+// 랜딩 화면
 queryInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") doSearch(queryInput.value);
 });
@@ -85,10 +290,11 @@ document.getElementById("search-btn").addEventListener("click", () => {
   doSearch(queryInput.value);
 });
 
-topQueryInput.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") doSearch(topQueryInput.value);
+// 하단 입력창
+bottomInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") doSearch(bottomInput.value);
 });
 
-document.getElementById("top-search-btn").addEventListener("click", () => {
-  doSearch(topQueryInput.value);
+document.getElementById("bottom-send-btn").addEventListener("click", () => {
+  doSearch(bottomInput.value);
 });

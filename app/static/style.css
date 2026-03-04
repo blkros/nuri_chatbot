@@ -19,6 +19,17 @@ body {
   justify-content: center;
   min-height: 100vh;
   padding: 0 20px;
+  transition: opacity 0.5s ease, transform 0.5s ease;
+}
+
+.landing.slide-out {
+  opacity: 0;
+  transform: translateY(-60px);
+  pointer-events: none;
+}
+
+.landing.gone {
+  display: none;
 }
 
 .logo {
@@ -43,7 +54,7 @@ body {
   background: #1a2533;
   border: 1px solid #2a3a4a;
   border-radius: 28px;
-  padding: 6px 8px 6px 24px;
+  padding: 6px 8px 6px 10px;
   transition: border-color 0.2s, box-shadow 0.2s;
 }
 
@@ -66,6 +77,35 @@ body {
   color: #5a6a7a;
 }
 
+/* ── + 첨부 버튼 ── */
+.attach-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  background: transparent;
+  border: 1.5px solid #3a4a5a;
+  border-radius: 50%;
+  color: #5a6a7a;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s;
+  flex-shrink: 0;
+  margin-right: 8px;
+}
+
+.attach-btn:hover {
+  border-color: #4ecdc4;
+  color: #4ecdc4;
+}
+
+.attach-btn-sm {
+  width: 32px;
+  height: 32px;
+  margin-right: 6px;
+}
+
+/* ── 전송 버튼 ── */
 .search-btn {
   display: flex;
   align-items: center;
@@ -85,21 +125,70 @@ body {
   background: #45b8b0;
 }
 
-/* ── 결과 화면 ── */
-.result-area {
-  min-height: 100vh;
+.search-btn-sm {
+  width: 38px;
+  height: 38px;
+}
+
+/* ── 파일 뱃지 ── */
+.file-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 6px 14px;
+  background: #1a2533;
+  border: 1px solid #2a3a4a;
+  border-radius: 20px;
+  font-size: 0.82rem;
+  color: #4ecdc4;
+}
+
+.file-badge-bottom {
+  margin-top: 8px;
+  margin-left: 4px;
+}
+
+.file-remove {
+  background: none;
+  border: none;
+  color: #5a6a7a;
+  font-size: 1.1rem;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.file-remove:hover {
+  color: #e05555;
+}
+
+/* ── 대화 영역 레이아웃 ── */
+.chat-area {
+  display: none;
+  flex-direction: column;
+  height: 100vh;
+  opacity: 0;
+  transform: translateY(30px);
+  transition: opacity 0.5s ease 0.2s, transform 0.5s ease 0.2s;
+}
+
+.chat-area.visible {
+  display: flex;
+}
+
+.chat-area.show {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .top-bar {
   display: flex;
   align-items: center;
-  gap: 20px;
   padding: 16px 24px;
   border-bottom: 1px solid #1a2533;
   background: #0f1923;
-  position: sticky;
-  top: 0;
-  z-index: 10;
+  flex-shrink: 0;
 }
 
 .top-logo {
@@ -110,24 +199,157 @@ body {
   white-space: nowrap;
 }
 
-.top-search-box {
+/* ── 채팅 메시지 스크롤 영역 ── */
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px 0;
+}
+
+/* ── 메시지 버블 ── */
+.msg {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 0 24px;
+  animation: msg-in 0.4s ease;
+}
+
+@keyframes msg-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.msg-user {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 20px;
+}
+
+.msg-user .bubble {
+  background: #1e3a4a;
+  border: 1px solid #2a4a5a;
+  border-radius: 18px 18px 4px 18px;
+  padding: 14px 20px;
+  max-width: 80%;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  color: #e0e6ed;
+}
+
+.msg-ai {
+  display: flex;
+  justify-content: flex-start;
+  margin-bottom: 24px;
+}
+
+.msg-ai .bubble-wrap {
+  max-width: 90%;
+}
+
+.msg-ai .bubble {
+  background: #1a2533;
+  border: 1px solid #2a3a4a;
+  border-radius: 18px 18px 18px 4px;
+  padding: 20px 24px;
+  font-size: 0.95rem;
+  line-height: 1.75;
+  color: #d0d8e0;
+}
+
+.msg-ai .bubble strong {
+  color: #4ecdc4;
+}
+
+/* ── 출처 태그 (버블 아래) ── */
+.msg-sources {
+  margin-top: 10px;
+  padding-left: 4px;
+}
+
+.msg-sources-label {
+  color: #5a6a7a;
+  font-size: 0.75rem;
+  margin-bottom: 6px;
+}
+
+.source-tag {
+  display: inline-block;
+  background: #0f1923;
+  border: 1px solid #2a3a4a;
+  border-radius: 6px;
+  padding: 3px 10px;
+  margin: 3px 3px 3px 0;
+  font-size: 0.78rem;
+  color: #5a8a7a;
+}
+
+/* ── 로딩 (AI 타이핑 인디케이터) ── */
+.msg-loading {
+  display: flex;
+  justify-content: flex-start;
+  margin-bottom: 24px;
+}
+
+.msg-loading .bubble {
+  background: #1a2533;
+  border: 1px solid #2a3a4a;
+  border-radius: 18px 18px 18px 4px;
+  padding: 16px 24px;
   display: flex;
   align-items: center;
-  flex: 1;
-  max-width: 600px;
+  gap: 14px;
+  color: #5a6a7a;
+  font-size: 0.88rem;
+}
+
+.typing-dots {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+}
+
+.typing-dots span {
+  width: 8px;
+  height: 8px;
+  background: #4ecdc4;
+  border-radius: 50%;
+  animation: bounce 1.4s ease-in-out infinite;
+}
+
+.typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+.typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes bounce {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+  40% { transform: scale(1); opacity: 1; }
+}
+
+/* ── 하단 입력창 ── */
+.bottom-bar {
+  flex-shrink: 0;
+  padding: 12px 24px 16px;
+  background: #0f1923;
+  border-top: 1px solid #1a2533;
+}
+
+.bottom-input-box {
+  display: flex;
+  align-items: center;
+  max-width: 720px;
+  margin: 0 auto;
   background: #1a2533;
   border: 1px solid #2a3a4a;
   border-radius: 24px;
-  padding: 4px 6px 4px 20px;
+  padding: 4px 6px 4px 10px;
   transition: border-color 0.2s, box-shadow 0.2s;
 }
 
-.top-search-box:focus-within {
+.bottom-input-box:focus-within {
   border-color: #4ecdc4;
   box-shadow: 0 0 0 3px rgba(78, 205, 196, 0.15);
 }
 
-.top-search-box input {
+.bottom-input-box input {
   flex: 1;
   background: transparent;
   border: none;
@@ -137,78 +359,40 @@ body {
   padding: 10px 0;
 }
 
-.top-search-box input::placeholder {
+.bottom-input-box input::placeholder {
   color: #5a6a7a;
 }
 
-.top-search-box .search-btn {
-  width: 38px;
-  height: 38px;
+/* ── 토스트 알림 ── */
+.toast-container {
+  position: fixed;
+  bottom: 90px;
+  right: 24px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
-/* ── 답변 영역 ── */
-.answer-container {
-  max-width: 720px;
-  margin: 0 auto;
-  padding: 32px 24px;
-}
-
-.answer-box {
+.toast {
+  padding: 12px 20px;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  color: #e0e6ed;
   background: #1a2533;
   border: 1px solid #2a3a4a;
-  border-radius: 16px;
-  padding: 28px 32px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  animation: toast-in 0.3s ease;
+  max-width: 360px;
 }
 
-.answer-text {
-  font-size: 0.95rem;
-  line-height: 1.75;
-  color: #d0d8e0;
-  white-space: pre-wrap;
-}
+.toast.success { border-color: #4ecdc4; }
+.toast.error   { border-color: #e05555; }
+.toast.info    { border-color: #5a8abf; }
 
-.answer-text strong {
-  color: #4ecdc4;
-}
-
-.sources {
-  margin-top: 20px;
-  padding-top: 16px;
-  border-top: 1px solid #2a3a4a;
-}
-
-.source-tag {
-  display: inline-block;
-  background: #0f1923;
-  border: 1px solid #2a3a4a;
-  border-radius: 6px;
-  padding: 4px 10px;
-  margin: 4px 4px 4px 0;
-  font-size: 0.8rem;
-  color: #5a8a7a;
-}
-
-/* ── 로딩 ── */
-.loading {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 24px;
-  color: #5a6a7a;
-  font-size: 0.9rem;
-}
-
-.spinner {
-  width: 22px;
-  height: 22px;
-  border: 2px solid #2a3a4a;
-  border-top-color: #4ecdc4;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 /* ── 유틸리티 ── */
@@ -220,7 +404,7 @@ body {
 @media (max-width: 640px) {
   .logo { font-size: 2.4rem; }
   .search-box { max-width: 100%; }
-  .top-bar { flex-direction: column; gap: 10px; }
-  .top-search-box { max-width: 100%; }
-  .answer-box { padding: 20px; }
+  .msg-user .bubble { max-width: 90%; }
+  .msg-ai .bubble-wrap { max-width: 95%; }
+  .msg-ai .bubble { padding: 16px; }
 }

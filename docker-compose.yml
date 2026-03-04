@@ -35,6 +35,7 @@ services:
   app:
     build: .
     container_name: nuri-app
+    shm_size: "4g"
     ports:
       - "3857:8080"
     volumes:

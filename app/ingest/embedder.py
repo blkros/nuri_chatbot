@@ -27,7 +27,6 @@ def get_nemotron_model():
             settings.nemotron_model_path,
             trust_remote_code=True,
             torch_dtype=torch.float32,
-            device_map="cpu",
         ).eval()
         logger.info("Nemotron ColEmbed V2 로드 완료")
     return _nemotron_model

@@ -53,6 +53,7 @@ def upsert_page(
     image_vectors: list[list[float]],
     text_vector: list[float],
     ocr_text: str,
+    image_path: str = "",
     metadata: dict | None = None,
 ):
     """단일 페이지를 Qdrant에 저장."""
@@ -63,6 +64,7 @@ def upsert_page(
         "file_name": file_name,
         "page_number": page_number,
         "ocr_text": ocr_text,
+        "image_path": image_path,
     }
     if metadata:
         payload.update(metadata)
@@ -82,3 +84,69 @@ def upsert_page(
     )
     logger.debug("페이지 저장: %s p.%d (id=%s)", file_name, page_number, point_id)
     return point_id
+
+
+def search_pages(
+    text_query_vector: list[float],
+    image_query_vectors: list[list[float]],
+    limit: int = 10,
+    department: str | None = None,
+    doc_type: str | None = None,
+) -> list[dict]:
+    """하이브리드 검색: text_vector + image_vector를 RRF로 융합."""
+    client = get_client()
+
+    # 메타데이터 필터 구성
+    must_conditions = []
+    if department:
+        must_conditions.append(
+            models.FieldCondition(
+                key="department", match=models.MatchValue(value=department)
+            )
+        )
+    if doc_type:
+        must_conditions.append(
+            models.FieldCondition(
+                key="doc_type", match=models.MatchValue(value=doc_type)
+            )
+        )
+    query_filter = models.Filter(must=must_conditions) if must_conditions else None
+
+    prefetch_limit = max(limit * 2, 20)
+
+    results = client.query_points(
+        collection_name=settings.collection_name,
+        prefetch=[
+            models.Prefetch(
+                query=text_query_vector,
+                using="text_vector",
+                limit=prefetch_limit,
+                filter=query_filter,
+            ),
+            models.Prefetch(
+                query=image_query_vectors,
+                using="image_vector",
+                limit=prefetch_limit,
+                filter=query_filter,
+            ),
+        ],
+        query=models.FusionQuery(fusion=models.Fusion.RRF),
+        limit=limit,
+        with_payload=True,
+    )
+
+    pages = []
+    for point in results.points:
+        pages.append({
+            "id": point.id,
+            "score": point.score,
+            "file_name": point.payload.get("file_name", ""),
+            "page_number": point.payload.get("page_number", 0),
+            "ocr_text": point.payload.get("ocr_text", ""),
+            "image_path": point.payload.get("image_path", ""),
+            "department": point.payload.get("department", ""),
+            "doc_type": point.payload.get("doc_type", ""),
+        })
+
+    logger.info("하이브리드 검색 완료: %d 결과", len(pages))
+    return pages

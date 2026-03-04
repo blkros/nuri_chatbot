@@ -89,3 +89,20 @@ def embed_texts(texts: list[str]) -> list[list[float]]:
     embeddings = model.encode(texts, normalize_embeddings=True)
     logger.info("텍스트 임베딩 완료: %d 건", len(texts))
     return embeddings.tolist()
+
+
+def embed_query_text(query: str) -> list[float]:
+    """단일 텍스트 쿼리를 BGE-m3-ko 1024차원 벡터로 변환."""
+    return embed_texts([query])[0]
+
+
+def embed_query_for_images(query: str) -> list[list[float]]:
+    """텍스트 쿼리를 Nemotron ColEmbed multi-vector로 변환 (이미지 벡터 검색용)."""
+    model = get_nemotron_model()
+    with torch.no_grad():
+        embeddings = model.forward_queries([query], batch_size=1)
+
+    emb = embeddings[0]
+    if isinstance(emb, torch.Tensor):
+        return emb.cpu().tolist()
+    return emb

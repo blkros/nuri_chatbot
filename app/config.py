@@ -20,6 +20,7 @@ class Settings(BaseSettings):
 
     # Document processing
     upload_dir: str = "/tmp/uploads"
+    page_images_dir: str = "/data/page_images"
     max_upload_size_mb: int = 100
 
     # Embedding dimensions

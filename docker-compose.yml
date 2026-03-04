@@ -41,6 +41,7 @@ services:
       - /ddrive/models/nemotron-colembed-vl-4b-v2:/models/nemotron-colembed-vl-4b-v2
       - /ddrive/models/bge-m3-korean:/models/bge-m3-korean
       - /ddrive/models/bge-reranker-v2-m3:/models/bge-reranker-v2-m3
+      - /ddrive/page_images:/data/page_images
     depends_on:
       - qdrant
       - vllm

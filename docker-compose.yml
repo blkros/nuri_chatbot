@@ -33,7 +33,9 @@ services:
     restart: unless-stopped
 
   app:
-    build: .
+    build:
+      context: .
+      network: host
     container_name: nuri-app
     shm_size: "4g"
     ports:

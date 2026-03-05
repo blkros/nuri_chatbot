@@ -55,6 +55,7 @@ def generate_answer(
 
     # 시스템 프롬프트
     system_prompt = (
+        "/no_think\n"
         "당신은 사내 문서 기반 질의응답 AI 어시스턴트입니다.\n"
         "제공된 문서 페이지 이미지와 추출 텍스트를 분석하여 질문에 답변하세요.\n\n"
         "## 핵심 원칙\n"
@@ -111,6 +112,9 @@ def generate_answer(
     )
 
     answer = response.choices[0].message.content
+    # thinking 토큰이 포함된 경우 제거
+    if answer and "</think>" in answer:
+        answer = answer.split("</think>")[-1].strip()
     logger.info("VLM 답변 생성 완료 (%d 토큰)", response.usage.completion_tokens)
 
     return {

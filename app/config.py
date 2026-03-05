@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     adaptive_max_k: int = 5
     rerank_score_min: float = 0.3
     rerank_gap_threshold: float = 0.15
+    text_sufficient_length: int = 150  # 이 글자수 이상이면 텍스트만으로 충분 (이미지 스킵)
     max_context_images: int = 5  # VLM에 전달 가능한 최대 이미지 수 (토큰 예산)
 
     model_config = {"env_prefix": "APP_"}

@@ -9,7 +9,7 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 # Qwen3-VL: 28×28 pixels = 1 token. 2048px 이미지 ≈ ~5,300 tokens
-VLM_MAX_IMAGE_SIZE = 1536
+VLM_MAX_IMAGE_SIZE = 2048
 
 
 def _resize_for_vlm(image: Image.Image) -> Image.Image:

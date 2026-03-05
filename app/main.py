@@ -394,16 +394,21 @@ def ask_question(
         for idx in top_indices:
             results[idx]["rerank_score"] = rerank_scores.get(idx, 0.0)
 
-        # 초기 top-k → 이미지+텍스트, 확장 페이지 → 텍스트만 (토큰 절약)
-        initial_set = {idx for idx, _ in fused[:effective_k]}
+        # 이미지 전송: 텍스트 충분도 기반 결정
+        # - 텍스트가 충분한 페이지 → 텍스트만 (눈 불필요)
+        # - 텍스트가 부족한 페이지 → 이미지 필요 (스캔 문서, 이미지)
         page_images = []
-        for i, r in enumerate(top_results):
-            idx = top_indices[i]
+        img_count = 0
+        for r in top_results:
+            ocr_text = r.get("ocr_text", "")
             img_path = r.get("image_path", "")
-            if idx in initial_set and img_path and Path(img_path).exists():
+            text_sufficient = len(ocr_text.strip()) >= settings.text_sufficient_length
+            if not text_sufficient and img_path and Path(img_path).exists():
                 page_images.append(Image.open(img_path).convert("RGB"))
+                img_count += 1
             else:
-                page_images.append(None)  # 확장 페이지 또는 텍스트 전용
+                page_images.append(None)  # 텍스트 충분 → 이미지 불필요
+        logger.info("VLM 전송: 이미지 %d장 (눈 필요) + 텍스트 전용 %d장", img_count, len(top_results) - img_count)
 
         # 7. VLM 답변 생성 (이미지/텍스트 혼합 지원)
         source_info = [

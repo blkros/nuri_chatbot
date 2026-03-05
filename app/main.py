@@ -89,7 +89,7 @@ async def ingest_document(
 
     try:
         # 1. 문서 → 페이지 이미지 + 텍스트 추출
-        page_images, temp_pdf_path, page_texts = process_document(file_path)
+        page_images, temp_pdf_path, page_texts, chunk_metas = process_document(file_path)
 
         # 2. 분류 (이미지 있으면 VLM, 없으면 키워드 폴백)
         all_text = "\n".join(page_texts[:3])
@@ -150,6 +150,11 @@ async def ingest_document(
             for i, (txt_vec, page_text) in enumerate(
                 zip(text_vectors, page_texts)
             ):
+                # 청크별 메타 (sheet, section) 병합
+                chunk_meta = metadata.copy()
+                if chunk_metas and i < len(chunk_metas):
+                    chunk_meta.update(chunk_metas[i])
+
                 pid = upsert_page(
                     file_name=file.filename,
                     page_number=i + 1,
@@ -157,7 +162,7 @@ async def ingest_document(
                     text_vector=txt_vec,
                     ocr_text=page_text,
                     image_path="",
-                    metadata=metadata,
+                    metadata=chunk_meta,
                 )
                 point_ids.append(pid)
 

@@ -147,6 +147,8 @@ def search_pages(
             "image_path": point.payload.get("image_path", ""),
             "department": point.payload.get("department", ""),
             "doc_type": point.payload.get("doc_type", ""),
+            "sheet": point.payload.get("sheet", ""),
+            "section": point.payload.get("section", ""),
         })
 
     logger.info("하이브리드 검색 완료: %d 결과", len(pages))

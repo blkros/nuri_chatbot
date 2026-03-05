@@ -187,15 +187,33 @@ def search_documents(
         if not results:
             return {"results": [], "message": "검색 결과가 없습니다."}
 
-        # 3. 리랭킹
+        # 3. 리랭킹 (전체 결과 대상)
         ocr_texts = [r["ocr_text"] for r in results]
-        ranked = rerank(question, ocr_texts, top_k=limit)
+        ranked = rerank(question, ocr_texts, top_k=len(results))
 
-        # 리랭킹 순서로 결과 재정렬
+        # 4. 검색 순위 + 리랭크 순위 RRF 결합
+        rerank_order = {idx: rank for rank, (idx, _) in enumerate(ranked)}
+        rerank_scores = {idx: score for idx, score in ranked}
+        RRF_K = 60
+        SEARCH_WEIGHT = 1.5
+        RERANK_WEIGHT = 1.0
+
+        fused = []
+        for search_rank in range(len(results)):
+            rr_rank = rerank_order.get(search_rank, len(results))
+            score = (
+                SEARCH_WEIGHT / (RRF_K + search_rank)
+                + RERANK_WEIGHT / (RRF_K + rr_rank)
+            )
+            fused.append((search_rank, score))
+
+        fused.sort(key=lambda x: x[1], reverse=True)
+
         reranked_results = []
-        for idx, score in ranked:
+        for idx, fused_score in fused[:limit]:
             result = results[idx].copy()
-            result["rerank_score"] = score
+            result["rerank_score"] = rerank_scores.get(idx, 0.0)
+            result["fused_score"] = fused_score
             reranked_results.append(result)
 
         return {"results": reranked_results}
@@ -208,7 +226,7 @@ def search_documents(
 @app.post("/ask")
 def ask_question(
     question: str = Form(...),
-    top_k: int = Form(3),
+    top_k: int = Form(5),
 ):
     """질문 → 검색 → 리랭킹 → VLM 답변 생성 (전체 RAG 파이프라인)."""
     try:
@@ -220,7 +238,7 @@ def ask_question(
         results = search_pages(
             text_query_vector=text_vector,
             image_query_vectors=image_vectors,
-            limit=max(top_k * 2, 10),
+            limit=max(top_k * 3, 15),
         )
 
         if not results:
@@ -229,12 +247,29 @@ def ask_question(
                 "sources": [],
             }
 
-        # 3. 리랭킹
+        # 3. 리랭킹 (전체 결과 대상)
         ocr_texts = [r["ocr_text"] for r in results]
-        ranked = rerank(question, ocr_texts, top_k=top_k)
+        ranked = rerank(question, ocr_texts, top_k=len(results))
 
-        # 4. 상위 페이지 이미지 로드
-        top_results = [results[idx] for idx, _ in ranked]
+        # 4. 검색 순위 + 리랭크 순위 RRF 결합
+        #    벡터 검색(이미지+텍스트)과 리랭커 양쪽을 반영
+        #    검색 가중치를 높여 리랭커 truncation 문제 보완
+        rerank_order = {idx: rank for rank, (idx, _) in enumerate(ranked)}
+        RRF_K = 60
+        SEARCH_WEIGHT = 1.5
+        RERANK_WEIGHT = 1.0
+
+        fused = []
+        for search_rank in range(len(results)):
+            rr_rank = rerank_order.get(search_rank, len(results))
+            score = (
+                SEARCH_WEIGHT / (RRF_K + search_rank)
+                + RERANK_WEIGHT / (RRF_K + rr_rank)
+            )
+            fused.append((search_rank, score))
+
+        fused.sort(key=lambda x: x[1], reverse=True)
+        top_results = [results[idx] for idx, _ in fused[:top_k]]
         page_images = []
         valid_results = []
 

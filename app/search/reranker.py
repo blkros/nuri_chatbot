@@ -47,7 +47,7 @@ def rerank(
             padding=True,
             truncation=True,
             return_tensors="pt",
-            max_length=512,
+            max_length=1024,
         )
         scores = model(**inputs, return_dict=True).logits.view(-1).float()
         scores = torch.sigmoid(scores).tolist()

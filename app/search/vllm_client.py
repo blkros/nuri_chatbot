@@ -85,7 +85,7 @@ def generate_answer(
         # 페이지 식별 + 추출 텍스트 (VLM에 텍스트 컨텍스트 제공)
         page_label = f"[문서 {i + 1}: {info['file_name']} {info['page_number']}페이지]"
         if ocr_text and ocr_text.strip():
-            page_label += f"\n--- 추출된 텍스트 ---\n{ocr_text[:2000]}\n---"
+            page_label += f"\n--- 추출된 텍스트 ---\n{ocr_text[:1000]}\n---"
         content.append({
             "type": "text",
             "text": page_label,

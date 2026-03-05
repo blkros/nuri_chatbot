@@ -226,7 +226,7 @@ def search_documents(
 @app.post("/ask")
 def ask_question(
     question: str = Form(...),
-    top_k: int = Form(5),
+    top_k: int = Form(3),
 ):
     """질문 → 검색 → 리랭킹 → VLM 답변 생성 (전체 RAG 파이프라인)."""
     try:
@@ -234,11 +234,11 @@ def ask_question(
         text_vector = embed_query_text(question)
         image_vectors = embed_query_for_images(question)
 
-        # 2. Qdrant 하이브리드 검색
+        # 2. Qdrant 하이브리드 검색 (넓은 풀에서 RRF 결합 후 top_k만 VLM에 전달)
         results = search_pages(
             text_query_vector=text_vector,
             image_query_vectors=image_vectors,
-            limit=max(top_k * 3, 15),
+            limit=15,
         )
 
         if not results:

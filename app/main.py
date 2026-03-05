@@ -255,12 +255,23 @@ def _expand_anchor_document(
     if anchor_count < 3:
         return top_indices
 
+    # 이미지 수 예산 (이미지는 토큰을 많이 소모하므로 별도 제한)
+    current_images = sum(
+        1 for idx in top_indices if results[idx].get("image_path")
+    )
+
     # 나머지 결과에서 앵커 문서 페이지 추가
     for idx, _ in fused[initial_k:]:
         if len(top_indices) >= settings.adaptive_max_k:
             break
-        if results[idx]["file_name"] == anchor_file:
-            top_indices.append(idx)
+        if results[idx]["file_name"] != anchor_file:
+            continue
+        # 이미지 페이지는 예산 초과 시 스킵 (텍스트 전용은 자유롭게 추가)
+        if results[idx].get("image_path") and current_images >= settings.max_context_images:
+            continue
+        top_indices.append(idx)
+        if results[idx].get("image_path"):
+            current_images += 1
 
     if len(top_indices) > initial_k:
         # 페이지 번호순 정렬 (자연스러운 읽기 순서)

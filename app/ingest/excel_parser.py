@@ -69,6 +69,16 @@ def _get_cell_value(ws, row: int, col: int, filled: dict) -> str:
     return str(cell.value).strip()
 
 
+def _get_raw_cell_value(ws, row: int, col: int) -> str:
+    """forward-fill 없이 원본 셀 값만 읽기. MergedCell은 빈 값 반환."""
+    cell = ws.cell(row, col)
+    if isinstance(cell, MergedCell):
+        return ""
+    if cell.value is None:
+        return ""
+    return str(cell.value).strip()
+
+
 def _parse_sheet(ws) -> list[str]:
     """단일 시트를 구조화 텍스트 청크 리스트로 변환.
 
@@ -78,17 +88,18 @@ def _parse_sheet(ws) -> list[str]:
     if ws.max_row is None or ws.max_row < 1:
         return []
 
-    filled = _forward_fill_merged_cells(ws)
+    max_col = ws.max_column or 1
 
-    # 헤더 행 탐지: 고유 값이 3개 이상인 첫 행 (병합 타이틀 행 건너뜀)
-    # 병합 타이틀 행은 forward-fill로 같은 값이 반복되어 고유 값이 1~2개뿐
+    # 1단계: 헤더 행 탐지 (forward-fill 없이 원본 셀 값 사용)
+    # 병합 타이틀은 좌상단 1셀만 값 있고 나머지는 MergedCell(빈 값)
+    # → 고유 값 1~2개로 자연스럽게 건너뜀
     # 실제 헤더 행은 다양한 열 이름(No, 구분, 팀장, 그룹장 등)이 있어 고유 값이 많음
     headers = []
-    header_row = 1
+    header_row = 0
     for row in range(1, min(ws.max_row + 1, 20)):
         row_values = [
-            _get_cell_value(ws, row, col, filled)
-            for col in range(1, (ws.max_column or 1) + 1)
+            _get_raw_cell_value(ws, row, col)
+            for col in range(1, max_col + 1)
         ]
         non_empty = [v for v in row_values if v]
         unique_values = set(non_empty)
@@ -103,7 +114,10 @@ def _parse_sheet(ws) -> list[str]:
     if not headers:
         return []
 
-    # 데이터 행을 구조화 텍스트로 변환
+    # 2단계: forward-fill (헤더 확정 후, 데이터 영역의 병합 셀 해제)
+    filled = _forward_fill_merged_cells(ws)
+
+    # 3단계: 데이터 행을 구조화 텍스트로 변환
     sheet_title = ws.title or "Sheet"
     lines = []
 

@@ -50,13 +50,13 @@ def ensure_collection():
 def upsert_page(
     file_name: str,
     page_number: int,
-    image_vectors: list[list[float]],
+    image_vectors: list[list[float]] | None,
     text_vector: list[float],
     ocr_text: str,
     image_path: str = "",
     metadata: dict | None = None,
 ):
-    """단일 페이지를 Qdrant에 저장."""
+    """단일 페이지를 Qdrant에 저장. image_vectors=None이면 텍스트 벡터만 저장."""
     client = get_client()
     point_id = str(uuid4())
 
@@ -69,15 +69,16 @@ def upsert_page(
     if metadata:
         payload.update(metadata)
 
+    vectors = {"text_vector": text_vector}
+    if image_vectors is not None:
+        vectors["image_vector"] = image_vectors
+
     client.upsert(
         collection_name=settings.collection_name,
         points=[
             models.PointStruct(
                 id=point_id,
-                vector={
-                    "image_vector": image_vectors,
-                    "text_vector": text_vector,
-                },
+                vector=vectors,
                 payload=payload,
             )
         ],

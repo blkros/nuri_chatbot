@@ -91,36 +91,18 @@ async def ingest_document(
         # 1. 문서 → 페이지 이미지 + 텍스트 추출
         page_images, temp_pdf_path, page_texts = process_document(file_path)
 
-        # 2. 페이지 이미지를 디스크에 저장
-        doc_id = str(uuid4())
-        img_dir = Path(settings.page_images_dir) / doc_id
-        img_dir.mkdir(parents=True, exist_ok=True)
-
-        image_paths = []
-        for i, img in enumerate(page_images):
-            img_path = img_dir / f"page_{i + 1}.jpg"
-            img.save(str(img_path), "JPEG", quality=90)
-            image_paths.append(str(img_path))
-
-        # 3. VLM 자동 분류 (임베딩 전에 실행 → prefix에 활용)
+        # 2. 분류 (이미지 있으면 VLM, 없으면 키워드 폴백)
         all_text = "\n".join(page_texts[:3])
         classification = classify_document_vlm(
-            page_image=page_images[0],
+            page_image=page_images[0] if page_images else None,
             text_content=all_text,
             file_name=file.filename,
         )
         department = classification.get("department", "기타")
         doc_type = classification.get("doc_type", "기타")
         summary = classification.get("summary", "")
-
-        # 4. 임베딩 (텍스트에 메타데이터 prefix 추가)
         prefix = f"[{department}/{doc_type}] {file.filename} | "
-        image_vectors = embed_images(page_images)
-        text_vectors = embed_texts(
-            [prefix + t if t.strip() else prefix + file.filename for t in page_texts]
-        )
 
-        # 5. Qdrant 저장
         metadata = {
             "department": department,
             "doc_type": doc_type,
@@ -128,24 +110,61 @@ async def ingest_document(
         }
 
         point_ids = []
-        for i, (img_vec, txt_vec, page_text, img_path) in enumerate(
-            zip(image_vectors, text_vectors, page_texts, image_paths)
-        ):
-            pid = upsert_page(
-                file_name=file.filename,
-                page_number=i + 1,
-                image_vectors=img_vec,
-                text_vector=txt_vec,
-                ocr_text=page_text,
-                image_path=img_path,
-                metadata=metadata,
+
+        if page_images:
+            # ── 이미지 + 텍스트 경로 (PDF, HWP, 오피스, 이미지) ──
+            doc_id = str(uuid4())
+            img_dir = Path(settings.page_images_dir) / doc_id
+            img_dir.mkdir(parents=True, exist_ok=True)
+
+            image_paths = []
+            for i, img in enumerate(page_images):
+                img_path = img_dir / f"page_{i + 1}.jpg"
+                img.save(str(img_path), "JPEG", quality=90)
+                image_paths.append(str(img_path))
+
+            img_vectors_list = embed_images(page_images)
+            text_vectors = embed_texts(
+                [prefix + t if t.strip() else prefix + file.filename for t in page_texts]
             )
-            point_ids.append(pid)
+
+            for i, (img_vec, txt_vec, page_text, img_path) in enumerate(
+                zip(img_vectors_list, text_vectors, page_texts, image_paths)
+            ):
+                pid = upsert_page(
+                    file_name=file.filename,
+                    page_number=i + 1,
+                    image_vectors=img_vec,
+                    text_vector=txt_vec,
+                    ocr_text=page_text,
+                    image_path=img_path,
+                    metadata=metadata,
+                )
+                point_ids.append(pid)
+        else:
+            # ── 텍스트 전용 경로 (Excel 등) ──
+            text_vectors = embed_texts(
+                [prefix + t if t.strip() else prefix + file.filename for t in page_texts]
+            )
+
+            for i, (txt_vec, page_text) in enumerate(
+                zip(text_vectors, page_texts)
+            ):
+                pid = upsert_page(
+                    file_name=file.filename,
+                    page_number=i + 1,
+                    image_vectors=None,
+                    text_vector=txt_vec,
+                    ocr_text=page_text,
+                    image_path="",
+                    metadata=metadata,
+                )
+                point_ids.append(pid)
 
         return {
             "status": "success",
             "file_name": file.filename,
-            "pages": len(page_images),
+            "pages": len(page_images) or len(page_texts),
             "department": department,
             "doc_type": doc_type,
             "summary": summary,
@@ -271,28 +290,20 @@ def ask_question(
         fused.sort(key=lambda x: x[1], reverse=True)
         top_results = [results[idx] for idx, _ in fused[:top_k]]
         page_images = []
-        valid_results = []
 
         for r in top_results:
             img_path = r.get("image_path", "")
             if img_path and Path(img_path).exists():
                 page_images.append(Image.open(img_path).convert("RGB"))
-                valid_results.append(r)
             else:
-                logger.warning("이미지 없음: %s p.%d", r["file_name"], r["page_number"])
+                page_images.append(None)  # 텍스트 전용 (Excel 등)
 
-        if not page_images:
-            return {
-                "answer": "검색된 문서의 페이지 이미지를 로드할 수 없습니다. 문서를 재인제스트해주세요.",
-                "sources": [{"file_name": r["file_name"], "page_number": r["page_number"]} for r in top_results],
-            }
-
-        # 5. VLM 답변 생성
+        # 5. VLM 답변 생성 (이미지/텍스트 혼합 지원)
         source_info = [
             {"file_name": r["file_name"], "page_number": r["page_number"]}
-            for r in valid_results
+            for r in top_results
         ]
-        ocr_for_vlm = [r["ocr_text"] for r in valid_results]
+        ocr_for_vlm = [r["ocr_text"] for r in top_results]
 
         result = generate_answer(
             question=question,

@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 def classify_document_vlm(
-    page_image: Image.Image,
+    page_image: Image.Image | None,
     text_content: str,
     file_name: str,
 ) -> dict:
@@ -20,10 +20,15 @@ def classify_document_vlm(
 
     첫 페이지 이미지 + 추출 텍스트를 VLM에 전송하여
     department, doc_type, summary를 자동 분류.
+    page_image=None이면 키워드 기반 폴백 (Excel 등 텍스트 전용 문서).
 
     Returns:
         {"department": str, "doc_type": str, "summary": str}
     """
+    if page_image is None:
+        dept = _classify_by_keywords(file_name, text_content)
+        return {"department": dept, "doc_type": "기타", "summary": ""}
+
     from openai import OpenAI
 
     client = OpenAI(base_url=settings.vllm_base_url, api_key="dummy")

@@ -32,17 +32,17 @@ def _image_to_base64(image: Image.Image, quality: int = 85) -> str:
 
 def generate_answer(
     question: str,
-    page_images: list[Image.Image],
+    page_images: list[Image.Image | None],
     ocr_texts: list[str],
     source_info: list[dict],
     max_tokens: int = 2048,
 ) -> dict:
-    """페이지 이미지들을 Qwen3-VL에 전송하여 답변 생성.
+    """페이지 이미지/텍스트를 Qwen3-VL에 전송하여 답변 생성.
 
     Args:
         question: 사용자 질문
-        page_images: 관련 페이지 이미지 (상위 K개)
-        ocr_texts: 각 페이지의 OCR 텍스트
+        page_images: 관련 페이지 이미지 (None이면 텍스트 전용)
+        ocr_texts: 각 페이지의 추출 텍스트
         source_info: 각 페이지의 출처 정보 [{"file_name", "page_number"}, ...]
         max_tokens: 최대 생성 토큰 수
 
@@ -72,20 +72,24 @@ def generate_answer(
         "- 답변 마지막에 출처를 표시하세요: [출처: 파일명, n페이지]\n"
     )
 
-    # 사용자 메시지: 이미지들 + 출처 정보 + 질문
+    # 사용자 메시지: 이미지/텍스트 + 출처 정보 + 질문
     content = []
     for i, (img, ocr_text, info) in enumerate(
         zip(page_images, ocr_texts, source_info)
     ):
-        img_b64 = _image_to_base64(img)
-        content.append({
-            "type": "image_url",
-            "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"},
-        })
-        # 페이지 식별 + 추출 텍스트 (VLM에 텍스트 컨텍스트 제공)
+        # 이미지가 있으면 포함 (텍스트 전용 문서는 None)
+        if img is not None:
+            img_b64 = _image_to_base64(img)
+            content.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"},
+            })
+        # 페이지 식별 + 추출 텍스트 (이미지 유무 관계없이 항상 추가)
+        # 텍스트 전용(이미지 없음)이면 더 많은 텍스트 허용 (이미지 토큰 절약분 활용)
+        text_limit = 3000 if img is None else 1500
         page_label = f"[문서 {i + 1}: {info['file_name']} {info['page_number']}페이지]"
         if ocr_text and ocr_text.strip():
-            page_label += f"\n--- 추출된 텍스트 ---\n{ocr_text[:1000]}\n---"
+            page_label += f"\n--- 추출된 텍스트 ---\n{ocr_text[:text_limit]}\n---"
         content.append({
             "type": "text",
             "text": page_label,

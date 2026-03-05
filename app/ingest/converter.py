@@ -111,7 +111,13 @@ def process_document(
 
     suffix = file_path.suffix.lower()
 
-    if suffix == ".hwp":
+    if suffix in (".xlsx", ".xls"):
+        from app.ingest.excel_parser import parse_excel
+
+        texts = parse_excel(file_path)
+        return [], None, texts
+
+    elif suffix == ".hwp":
         pdf_path = convert_hwp_to_pdf(file_path)
         images = pdf_to_page_images(pdf_path)
         texts = extract_texts_from_pdf(pdf_path)
@@ -121,7 +127,7 @@ def process_document(
         texts = extract_texts_from_pdf(file_path)
         return images, None, texts
     elif suffix in (".docx", ".doc", ".hwpx", ".pptx", ".ppt",
-                     ".xlsx", ".xls", ".csv", ".odt", ".ods", ".odp", ".rtf"):
+                     ".csv", ".odt", ".ods", ".odp", ".rtf"):
         pdf_path = convert_office_to_pdf(file_path)
         images = pdf_to_page_images(pdf_path)
         texts = extract_texts_from_pdf(pdf_path)

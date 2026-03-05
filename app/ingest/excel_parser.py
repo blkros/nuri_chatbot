@@ -80,18 +80,24 @@ def _parse_sheet(ws) -> list[str]:
 
     filled = _forward_fill_merged_cells(ws)
 
-    # 헤더 행 탐지: 첫 번째 비어있지 않은 행을 헤더로 사용
+    # 헤더 행 탐지: 고유 값이 3개 이상인 첫 행 (병합 타이틀 행 건너뜀)
+    # 병합 타이틀 행은 forward-fill로 같은 값이 반복되어 고유 값이 1~2개뿐
+    # 실제 헤더 행은 다양한 열 이름(No, 구분, 팀장, 그룹장 등)이 있어 고유 값이 많음
     headers = []
     header_row = 1
-    for row in range(1, min(ws.max_row + 1, 10)):
+    for row in range(1, min(ws.max_row + 1, 20)):
         row_values = [
             _get_cell_value(ws, row, col, filled)
             for col in range(1, (ws.max_column or 1) + 1)
         ]
         non_empty = [v for v in row_values if v]
-        if len(non_empty) >= 2:
+        unique_values = set(non_empty)
+        if len(unique_values) >= 3:
             headers = row_values
             header_row = row
+            logger.info("헤더 행 탐지: row %d (%d 고유 값: %s)",
+                        row, len(unique_values),
+                        ", ".join(list(unique_values)[:8]))
             break
 
     if not headers:

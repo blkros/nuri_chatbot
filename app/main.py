@@ -230,6 +230,49 @@ def _compute_adaptive_k(rerank_scores_sorted: list[float]) -> int:
     return k
 
 
+def _expand_anchor_document(
+    results: list[dict],
+    fused: list[tuple[int, float]],
+    initial_k: int,
+) -> list[int]:
+    """앵커 문서 확장: top-1 결과의 동일 문서에서 추가 페이지 포함.
+
+    리랭커가 개요 페이지만 높게 평가하고 상세 페이지를 낮게 평가하는 경우,
+    같은 문서 내 페이지를 추가로 포함하여 상세 컨텍스트를 확보한다.
+    다른 문서의 노이즈 유입 없이 안전하게 확장.
+    """
+    top_indices = [idx for idx, _ in fused[:initial_k]]
+
+    if not top_indices:
+        return top_indices
+
+    # Top-1 결과의 파일 = 앵커 문서 후보
+    anchor_file = results[fused[0][0]]["file_name"]
+
+    # 앵커 문서가 검색 결과에 3개 이상 존재할 때만 확장
+    # (단일/소수 페이지 문서는 확장 불필요)
+    anchor_count = sum(1 for r in results if r["file_name"] == anchor_file)
+    if anchor_count < 3:
+        return top_indices
+
+    # 나머지 결과에서 앵커 문서 페이지 추가
+    for idx, _ in fused[initial_k:]:
+        if len(top_indices) >= settings.adaptive_max_k:
+            break
+        if results[idx]["file_name"] == anchor_file:
+            top_indices.append(idx)
+
+    if len(top_indices) > initial_k:
+        # 페이지 번호순 정렬 (자연스러운 읽기 순서)
+        top_indices.sort(key=lambda i: results[i].get("page_number", 0))
+        logger.info(
+            "앵커 문서 확장: %s (%d→%d 페이지)",
+            anchor_file, initial_k, len(top_indices),
+        )
+
+    return top_indices
+
+
 # ─── 검색 + 답변 ────────────────────────────────────────────
 
 @app.post("/search")
@@ -341,10 +384,13 @@ def ask_question(
             fused.append((search_rank, score))
 
         fused.sort(key=lambda x: x[1], reverse=True)
-        top_results = [results[idx] for idx, _ in fused[:effective_k]]
+
+        # 6. 앵커 문서 확장 (같은 문서 내 페이지 추가)
+        top_indices = _expand_anchor_document(results, fused, effective_k)
+        top_results = [results[idx] for idx in top_indices]
 
         # 선택된 결과에 리랭크 점수 기록 (디버깅용)
-        for idx, _ in fused[:effective_k]:
+        for idx in top_indices:
             results[idx]["rerank_score"] = rerank_scores.get(idx, 0.0)
 
         page_images = []
@@ -355,7 +401,7 @@ def ask_question(
             else:
                 page_images.append(None)  # 텍스트 전용 (Excel 등)
 
-        # 6. VLM 답변 생성 (이미지/텍스트 혼합 지원)
+        # 7. VLM 답변 생성 (이미지/텍스트 혼합 지원)
         source_info = [
             {"file_name": r["file_name"], "page_number": r["page_number"]}
             for r in top_results

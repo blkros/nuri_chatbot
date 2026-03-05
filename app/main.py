@@ -188,6 +188,48 @@ async def ingest_document(
             temp_pdf_path.unlink()
 
 
+# ─── Adaptive top_k ──────────────────────────────────────────
+
+
+def _compute_adaptive_k(rerank_scores_sorted: list[float]) -> int:
+    """리랭커 점수 분포 기반 adaptive top_k 결정.
+
+    1) 절대 점수 하한 필터 — 노이즈(비관련 문서) 제거
+    2) Gap-knee 탐지 — 점수 급락 지점에서 관련/비관련 경계 식별
+    3) MIN_K ~ MAX_K 클램프
+    """
+    if not rerank_scores_sorted:
+        return settings.adaptive_min_k
+
+    # 1. 절대 점수 하한 필터
+    valid_count = sum(
+        1 for s in rerank_scores_sorted if s >= settings.rerank_score_min
+    )
+
+    # 2. Gap-knee 탐지: 점수 급락 지점 찾기
+    knee_k = len(rerank_scores_sorted)
+    for i in range(len(rerank_scores_sorted) - 1):
+        gap = rerank_scores_sorted[i] - rerank_scores_sorted[i + 1]
+        if gap > settings.rerank_gap_threshold:
+            knee_k = i + 1
+            break
+
+    # 3. 두 기준 중 더 보수적인 값 (절대 점수 + gap 모두 통과해야 포함)
+    k = min(knee_k, valid_count)
+
+    # 4. MIN_K ~ MAX_K 클램프
+    k = max(settings.adaptive_min_k, min(k, settings.adaptive_max_k))
+
+    logger.info(
+        "Adaptive top_k=%d (valid=%d, knee=%d, scores=[%s])",
+        k,
+        valid_count,
+        knee_k,
+        ", ".join(f"{s:.3f}" for s in rerank_scores_sorted[: min(k + 2, len(rerank_scores_sorted))]),
+    )
+    return k
+
+
 # ─── 검색 + 답변 ────────────────────────────────────────────
 
 @app.post("/search")
@@ -250,7 +292,7 @@ def search_documents(
 @app.post("/ask")
 def ask_question(
     question: str = Form(...),
-    top_k: int = Form(3),
+    top_k: int = Form(0),  # 0 = adaptive (리랭커 점수 기반 자동 결정)
 ):
     """질문 → 검색 → 리랭킹 → VLM 답변 생성 (전체 RAG 파이프라인)."""
     try:
@@ -258,7 +300,7 @@ def ask_question(
         text_vector = embed_query_text(question)
         image_vectors = embed_query_for_images(question)
 
-        # 2. Qdrant 하이브리드 검색 (넓은 풀에서 RRF 결합 후 top_k만 VLM에 전달)
+        # 2. Qdrant 하이브리드 검색 (넓은 풀에서 후보 확보)
         results = search_pages(
             text_query_vector=text_vector,
             image_query_vectors=image_vectors,
@@ -275,10 +317,16 @@ def ask_question(
         ocr_texts = [r["ocr_text"] for r in results]
         ranked = rerank(question, ocr_texts, top_k=len(results))
 
-        # 4. 검색 순위 + 리랭크 순위 RRF 결합
-        #    벡터 검색(이미지+텍스트)과 리랭커 양쪽을 반영
-        #    검색 가중치를 높여 리랭커 truncation 문제 보완
+        # 4. Adaptive top_k 결정 (리랭커 점수 분포 기반)
+        if top_k <= 0:
+            rerank_scores_sorted = [score for _, score in ranked]
+            effective_k = _compute_adaptive_k(rerank_scores_sorted)
+        else:
+            effective_k = top_k
+
+        # 5. 검색 순위 + 리랭크 순위 RRF 결합
         rerank_order = {idx: rank for rank, (idx, _) in enumerate(ranked)}
+        rerank_scores = {idx: score for idx, score in ranked}
         RRF_K = 60
         SEARCH_WEIGHT = 1.5
         RERANK_WEIGHT = 1.0
@@ -293,9 +341,13 @@ def ask_question(
             fused.append((search_rank, score))
 
         fused.sort(key=lambda x: x[1], reverse=True)
-        top_results = [results[idx] for idx, _ in fused[:top_k]]
-        page_images = []
+        top_results = [results[idx] for idx, _ in fused[:effective_k]]
 
+        # 선택된 결과에 리랭크 점수 기록 (디버깅용)
+        for idx, _ in fused[:effective_k]:
+            results[idx]["rerank_score"] = rerank_scores.get(idx, 0.0)
+
+        page_images = []
         for r in top_results:
             img_path = r.get("image_path", "")
             if img_path and Path(img_path).exists():
@@ -303,7 +355,7 @@ def ask_question(
             else:
                 page_images.append(None)  # 텍스트 전용 (Excel 등)
 
-        # 5. VLM 답변 생성 (이미지/텍스트 혼합 지원)
+        # 6. VLM 답변 생성 (이미지/텍스트 혼합 지원)
         source_info = [
             {"file_name": r["file_name"], "page_number": r["page_number"]}
             for r in top_results

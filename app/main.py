@@ -255,23 +255,13 @@ def _expand_anchor_document(
     if anchor_count < 3:
         return top_indices
 
-    # 이미지 수 예산 (이미지는 토큰을 많이 소모하므로 별도 제한)
-    current_images = sum(
-        1 for idx in top_indices if results[idx].get("image_path")
-    )
-
     # 나머지 결과에서 앵커 문서 페이지 추가
+    # (확장 페이지는 VLM에 텍스트만 전달되므로 이미지 토큰 부담 없음)
     for idx, _ in fused[initial_k:]:
         if len(top_indices) >= settings.adaptive_max_k:
             break
-        if results[idx]["file_name"] != anchor_file:
-            continue
-        # 이미지 페이지는 예산 초과 시 스킵 (텍스트 전용은 자유롭게 추가)
-        if results[idx].get("image_path") and current_images >= settings.max_context_images:
-            continue
-        top_indices.append(idx)
-        if results[idx].get("image_path"):
-            current_images += 1
+        if results[idx]["file_name"] == anchor_file:
+            top_indices.append(idx)
 
     if len(top_indices) > initial_k:
         # 페이지 번호순 정렬 (자연스러운 읽기 순서)
@@ -404,13 +394,16 @@ def ask_question(
         for idx in top_indices:
             results[idx]["rerank_score"] = rerank_scores.get(idx, 0.0)
 
+        # 초기 top-k → 이미지+텍스트, 확장 페이지 → 텍스트만 (토큰 절약)
+        initial_set = {idx for idx, _ in fused[:effective_k]}
         page_images = []
-        for r in top_results:
+        for i, r in enumerate(top_results):
+            idx = top_indices[i]
             img_path = r.get("image_path", "")
-            if img_path and Path(img_path).exists():
+            if idx in initial_set and img_path and Path(img_path).exists():
                 page_images.append(Image.open(img_path).convert("RGB"))
             else:
-                page_images.append(None)  # 텍스트 전용 (Excel 등)
+                page_images.append(None)  # 확장 페이지 또는 텍스트 전용
 
         # 7. VLM 답변 생성 (이미지/텍스트 혼합 지원)
         source_info = [

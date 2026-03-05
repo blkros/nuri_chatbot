@@ -31,8 +31,12 @@ def extract_text(image: Image.Image) -> str:
 
     lines = []
     for res in results:
-        texts = res.json.get("rec_texts", [])
-        lines.extend(texts)
+        inner = res.json.get("res", {})
+        texts = inner.get("rec_texts", [])
+        scores = inner.get("rec_scores", [])
+        for text, score in zip(texts, scores):
+            if text.strip() and score >= 0.5:
+                lines.append(text)
 
     if not lines:
         return ""

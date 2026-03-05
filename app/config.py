@@ -29,7 +29,7 @@ class Settings(BaseSettings):
 
     # Adaptive top_k (리랭커 점수 기반 동적 결정)
     adaptive_min_k: int = 3
-    adaptive_max_k: int = 8
+    adaptive_max_k: int = 5
     rerank_score_min: float = 0.3
     rerank_gap_threshold: float = 0.15
     max_context_images: int = 5  # VLM에 전달 가능한 최대 이미지 수 (토큰 예산)

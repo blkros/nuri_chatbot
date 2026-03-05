@@ -9,7 +9,7 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 # Qwen3-VL: 28×28 pixels = 1 token. 2048px 이미지 ≈ ~5,300 tokens
-VLM_MAX_IMAGE_SIZE = 2048
+VLM_MAX_IMAGE_SIZE = 1536
 
 
 def _resize_for_vlm(image: Image.Image) -> Image.Image:
@@ -35,7 +35,7 @@ def generate_answer(
     page_images: list[Image.Image | None],
     ocr_texts: list[str],
     source_info: list[dict],
-    max_tokens: int = 2048,
+    max_tokens: int = 1536,
 ) -> dict:
     """페이지 이미지/텍스트를 Qwen3-VL에 전송하여 답변 생성.
 

@@ -283,11 +283,8 @@ def _expand_with_doc_concentration(
 
     # ── 집중도 높음 → 문서 전체 페이지 조회 (Qdrant scroll) ──
     if concentration >= settings.doc_concentration_threshold:
-        # limit+1로 조회해서 문서가 limit 이하인지 판별
-        all_pages = get_document_pages(
-            anchor_file,
-            limit=settings.max_doc_expansion_pages + 1,
-        )
+        # 문서 전체 페이지를 가져와서 크기 판별 + neighbor 매칭
+        all_pages = get_document_pages(anchor_file, limit=200)
         doc_is_small = len(all_pages) <= settings.max_doc_expansion_pages
 
         other_results = [
@@ -304,7 +301,6 @@ def _expand_with_doc_concentration(
             return all_pages + other_results[:2]
 
         # 문서가 크면 검색에 걸린 페이지 + 인접 페이지(±1)
-        all_pages = all_pages[:settings.max_doc_expansion_pages]
         existing_pages = {results[idx]["page_number"] for idx in top_indices
                          if results[idx]["file_name"] == anchor_file}
         expanded = []
@@ -313,9 +309,14 @@ def _expand_with_doc_concentration(
             if pn in existing_pages or any(abs(pn - ep) <= 1 for ep in existing_pages):
                 expanded.append(page)
 
+        # max_doc_expansion_pages로 cap
+        if len(expanded) > settings.max_doc_expansion_pages:
+            expanded = expanded[:settings.max_doc_expansion_pages]
+
         logger.info(
-            "문서 확장 (neighbor): %s → %d 페이지 (검색 %d + 인접)",
-            anchor_file, len(expanded), len(existing_pages),
+            "문서 확장 (neighbor): %s → %d 페이지 (검색 히트: %s)",
+            anchor_file, len(expanded),
+            sorted(existing_pages),
         )
         return expanded + other_results[:2]
 

@@ -11,9 +11,140 @@ const fileBadge = document.getElementById("file-badge");
 const fileNameSpan = document.getElementById("file-name");
 const bottomFileBadge = document.getElementById("bottom-file-badge");
 const bottomFileNameSpan = document.getElementById("bottom-file-name");
+const sidebar = document.getElementById("sidebar");
+const historyList = document.getElementById("history-list");
 
 // 상태
 let pendingFile = null;
+let currentConversationId = null;
+
+// ── 대화 이력 관리 (localStorage) ──
+
+function loadConversations() {
+  try {
+    return JSON.parse(localStorage.getItem("nuri_conversations") || "[]");
+  } catch { return []; }
+}
+
+function saveConversations(convs) {
+  localStorage.setItem("nuri_conversations", JSON.stringify(convs));
+}
+
+function createConversation(title) {
+  const conv = {
+    id: Date.now().toString(),
+    title: title.slice(0, 60),
+    messages: [],  // [{role: "user"|"ai", content: string}]
+    createdAt: Date.now(),
+  };
+  const convs = loadConversations();
+  convs.unshift(conv);
+  // 최대 50개 보관
+  if (convs.length > 50) convs.length = 50;
+  saveConversations(convs);
+  currentConversationId = conv.id;
+  return conv;
+}
+
+function appendMessage(role, content) {
+  if (!currentConversationId) return;
+  const convs = loadConversations();
+  const conv = convs.find(c => c.id === currentConversationId);
+  if (conv) {
+    conv.messages.push({ role, content });
+    saveConversations(convs);
+  }
+}
+
+function deleteConversation(id) {
+  let convs = loadConversations();
+  convs = convs.filter(c => c.id !== id);
+  saveConversations(convs);
+  if (currentConversationId === id) {
+    currentConversationId = null;
+  }
+  renderHistoryList();
+}
+
+function renderHistoryList() {
+  const convs = loadConversations();
+  if (convs.length === 0) {
+    historyList.innerHTML = '<div class="history-empty">대화 이력이 없습니다</div>';
+    return;
+  }
+  historyList.innerHTML = "";
+  convs.forEach(conv => {
+    const item = document.createElement("div");
+    item.className = "history-item" + (conv.id === currentConversationId ? " active" : "");
+    item.textContent = conv.title;
+    item.addEventListener("click", () => loadConversation(conv.id));
+
+    const delBtn = document.createElement("button");
+    delBtn.className = "history-delete";
+    delBtn.innerHTML = "&times;";
+    delBtn.title = "삭제";
+    delBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      deleteConversation(conv.id);
+    });
+    item.appendChild(delBtn);
+
+    historyList.appendChild(item);
+  });
+}
+
+function loadConversation(id) {
+  const convs = loadConversations();
+  const conv = convs.find(c => c.id === id);
+  if (!conv) return;
+
+  currentConversationId = id;
+  chatMessages.innerHTML = "";
+
+  // 메시지 복원
+  conv.messages.forEach(msg => {
+    if (msg.role === "user") {
+      addUserMessage(msg.content, false);
+    } else {
+      addAIMessage(formatAnswer(msg.content), false);
+    }
+  });
+
+  renderHistoryList();
+
+  // 이미 채팅 모드라면 스크롤만
+  if (chatArea.classList.contains("visible")) {
+    scrollToBottom();
+    bottomInput.focus();
+  } else {
+    // 랜딩에서 전환
+    transitionToChat().then(() => bottomInput.focus());
+  }
+}
+
+// ── 사이드바 토글 ──
+
+let sidebarOpen = false;
+
+function toggleSidebar() {
+  sidebarOpen = !sidebarOpen;
+  sidebar.classList.toggle("open", sidebarOpen);
+}
+
+function openSidebar() {
+  if (!sidebarOpen) {
+    sidebarOpen = true;
+    sidebar.classList.add("open");
+  }
+}
+
+document.getElementById("sidebar-toggle").addEventListener("click", toggleSidebar);
+document.getElementById("new-chat-btn").addEventListener("click", () => {
+  currentConversationId = null;
+  chatMessages.innerHTML = "";
+  renderHistoryList();
+  bottomInput.focus();
+});
 
 // ── 파일 첨부 ──
 
@@ -26,7 +157,6 @@ fileInput.addEventListener("change", () => {
   if (!file) return;
   pendingFile = file;
 
-  // 현재 보이는 화면에 따라 뱃지 표시
   if (!chatArea.classList.contains("visible")) {
     fileNameSpan.textContent = file.name;
     fileBadge.classList.remove("hidden");
@@ -34,7 +164,6 @@ fileInput.addEventListener("change", () => {
     bottomFileNameSpan.textContent = file.name;
     bottomFileBadge.classList.remove("hidden");
   }
-
 });
 
 function clearFile() {
@@ -52,25 +181,47 @@ document.getElementById("bottom-attach-btn").addEventListener("click", openFileP
 
 // ── 메시지 추가 헬퍼 ──
 
-function addUserMessage(text) {
+function addUserMessage(text, save = true) {
   const div = document.createElement("div");
   div.className = "msg msg-user";
   div.innerHTML = `<div class="bubble">${escapeHtml(text)}</div>`;
   chatMessages.appendChild(div);
   scrollToBottom();
+  if (save) appendMessage("user", text);
 }
 
-function addAIMessage(html, sourcesHtml) {
+function addAIMessage(html, save = true) {
   const div = document.createElement("div");
   div.className = "msg msg-ai";
-  let inner = `<div class="bubble-wrap"><div class="bubble">${html}</div>`;
-  if (sourcesHtml) {
-    inner += `<div class="msg-sources">${sourcesHtml}</div>`;
-  }
-  inner += `</div>`;
-  div.innerHTML = inner;
+  div.innerHTML = `<div class="bubble-wrap"><div class="bubble">${html}</div></div>`;
   chatMessages.appendChild(div);
   scrollToBottom();
+}
+
+function addStreamingAIMessage() {
+  const div = document.createElement("div");
+  div.className = "msg msg-ai";
+  div.id = "streaming-msg";
+  div.innerHTML = `<div class="bubble-wrap"><div class="bubble" id="streaming-bubble"><span class="streaming-cursor"></span></div></div>`;
+  chatMessages.appendChild(div);
+  scrollToBottom();
+  return document.getElementById("streaming-bubble");
+}
+
+function finalizeStreamingMessage(fullText) {
+  const bubble = document.getElementById("streaming-bubble");
+  if (!bubble) return;
+  const cursor = bubble.querySelector(".streaming-cursor");
+  if (cursor) cursor.remove();
+  bubble.innerHTML = formatAnswer(fullText);
+  bubble.removeAttribute("id");
+  const msg = document.getElementById("streaming-msg");
+  if (msg) msg.removeAttribute("id");
+  scrollToBottom();
+
+  // 대화 이력에 저장
+  appendMessage("ai", fullText);
+  renderHistoryList();
 }
 
 function addLoadingIndicator() {
@@ -128,20 +279,18 @@ function transitionToChat() {
 
     isTransitioning = true;
 
-    // 1. 랜딩 위로 슬라이드 아웃
     landing.classList.add("slide-out");
 
-    // 2. 채팅 영역 준비 (보이지만 투명)
     setTimeout(() => {
       chatArea.classList.add("visible");
 
-      // 3. 다음 프레임에서 채팅 페이드인
       requestAnimationFrame(() => {
         chatArea.classList.add("show");
+        // 사이드바 슬라이드 인 (약간 딜레이)
+        setTimeout(() => openSidebar(), 200);
       });
     }, 300);
 
-    // 4. 트랜지션 완료 후 랜딩 완전 제거
     setTimeout(() => {
       landing.classList.add("gone");
       isTransitioning = false;
@@ -159,15 +308,18 @@ async function doSearch(question) {
   if (!hasQuestion && !hasFile) return;
   if (isTransitioning) return;
 
-  // 랜딩 → 채팅 전환 (애니메이션)
+  // 새 대화 시작 (현재 대화가 없으면)
+  if (!currentConversationId && hasQuestion) {
+    createConversation(question.trim());
+    renderHistoryList();
+  }
+
   await transitionToChat();
 
-  // 사용자 메시지 표시
   if (hasQuestion) {
     addUserMessage(question);
   }
 
-  // 입력 초기화
   queryInput.value = "";
   bottomInput.value = "";
 
@@ -188,8 +340,13 @@ async function doSearch(question) {
       const summaryText = ingestResult.summary || "";
       showToast(`${ingestResult.file_name} 인덱싱 완료 (${ingestResult.pages}페이지)`, "success");
 
-      // 질문 없이 파일만 업로드한 경우
       if (!hasQuestion) {
+        // 파일만 업로드 — 대화 시작
+        if (!currentConversationId) {
+          createConversation(`📎 ${ingestResult.file_name}`);
+          renderHistoryList();
+        }
+
         let msgHtml = `<strong>${escapeHtml(ingestResult.file_name)}</strong> 문서가 등록되었습니다 (${ingestResult.pages}페이지).`;
         if (deptLabel || docTypeLabel) {
           msgHtml += `<br>분류: ${deptLabel ? `[${escapeHtml(deptLabel)}]` : ""} ${docTypeLabel ? escapeHtml(docTypeLabel) : ""}`;
@@ -198,7 +355,9 @@ async function doSearch(question) {
           msgHtml += `<br>요약: ${escapeHtml(summaryText)}`;
         }
         msgHtml += `<br>이제 이 문서에 대해 질문할 수 있습니다.`;
-        addAIMessage(msgHtml, "");
+        addAIMessage(msgHtml);
+        appendMessage("ai", `${ingestResult.file_name} 문서가 등록되었습니다 (${ingestResult.pages}페이지).`);
+        renderHistoryList();
         bottomInput.focus();
         return;
       }
@@ -206,25 +365,72 @@ async function doSearch(question) {
       addLoadingIndicator();
     }
 
-    // 2. 질문 검색
+    // 2. 질문 → SSE 스트리밍
     const formData = new FormData();
     formData.append("question", question);
 
-    const res = await fetch(`${API_BASE}/ask`, {
-      method: "POST",
-      body: formData,
-    });
-
-    const data = await res.json();
     removeLoadingIndicator();
+    const bubble = addStreamingAIMessage();
+    let fullText = "";
 
-    if (data.answer) {
-      addAIMessage(
-        formatAnswer(data.answer),
-        formatSources(data.sources || [])
-      );
-    } else {
-      addAIMessage(escapeHtml(data.detail || "답변을 생성할 수 없습니다."), "");
+    try {
+      const res = await fetch(`${API_BASE}/ask/stream`, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail || "서버 오류");
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop();
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const payload = line.slice(6);
+          if (payload === "[DONE]") break;
+
+          try {
+            const msg = JSON.parse(payload);
+            if (msg.token) {
+              fullText += msg.token;
+              bubble.textContent = fullText;
+              let cursor = bubble.querySelector(".streaming-cursor");
+              if (!cursor) {
+                cursor = document.createElement("span");
+                cursor.className = "streaming-cursor";
+              }
+              bubble.appendChild(cursor);
+              scrollToBottom();
+            } else if (msg.answer) {
+              // 비스트리밍 폴백 (결과 없음 등)
+              fullText = msg.answer;
+              bubble.textContent = fullText;
+            } else if (msg.error) {
+              fullText = "답변 생성 중 오류가 발생했습니다.";
+              bubble.textContent = fullText;
+            }
+            // msg.sources는 무시 (출처 표시 안 함)
+          } catch (e) { /* JSON 파싱 실패 무시 */ }
+        }
+      }
+
+      finalizeStreamingMessage(fullText);
+    } catch (streamErr) {
+      fullText = fullText || "서버 연결에 실패했습니다.";
+      bubble.textContent = fullText;
+      finalizeStreamingMessage(fullText);
     }
   } catch (err) {
     removeLoadingIndicator();
@@ -232,7 +438,7 @@ async function doSearch(question) {
       showToast(err.message, "error");
       if (!hasQuestion) return;
     }
-    addAIMessage("서버 연결에 실패했습니다. 잠시 후 다시 시도해주세요.", "");
+    addAIMessage("서버 연결에 실패했습니다. 잠시 후 다시 시도해주세요.");
   }
 
   bottomInput.focus();
@@ -241,19 +447,9 @@ async function doSearch(question) {
 // ── 마크다운 기본 포맷 ──
 
 function formatAnswer(text) {
-  return text
+  return escapeHtml(text)
     .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
     .replace(/\n/g, "<br>");
-}
-
-// ── 출처 표시 ──
-
-function formatSources(srcList) {
-  if (!srcList.length) return "";
-  const tags = srcList
-    .map((s) => `<span class="source-tag">${escapeHtml(s.file_name)} ${s.page_number}p</span>`)
-    .join("");
-  return `<div class="msg-sources-label">참조 문서</div>${tags}`;
 }
 
 // ── 토스트 알림 ──
@@ -274,6 +470,10 @@ function showToast(message, type = "info") {
 // ── 초기 화면으로 복귀 ──
 
 function resetUI() {
+  sidebarOpen = false;
+  sidebar.classList.remove("open");
+  currentConversationId = null;
+
   chatArea.classList.remove("show");
   setTimeout(() => {
     chatArea.classList.remove("visible");
@@ -288,7 +488,6 @@ function resetUI() {
 
 // ── 이벤트 바인딩 ──
 
-// 랜딩 화면
 queryInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") doSearch(queryInput.value);
 });
@@ -297,7 +496,6 @@ document.getElementById("search-btn").addEventListener("click", () => {
   doSearch(queryInput.value);
 });
 
-// 하단 입력창
 bottomInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") doSearch(bottomInput.value);
 });
@@ -305,3 +503,6 @@ bottomInput.addEventListener("keydown", (e) => {
 document.getElementById("bottom-send-btn").addEventListener("click", () => {
   doSearch(bottomInput.value);
 });
+
+// ── 초기화 ──
+renderHistoryList();

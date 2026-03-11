@@ -1,9 +1,10 @@
+import json
 import logging
 from pathlib import Path
 from uuid import uuid4
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from PIL import Image
 
@@ -17,7 +18,12 @@ from app.ingest.embedder import (
     embed_texts,
 )
 from app.search.reranker import rerank
-from app.search.vllm_client import describe_image_for_search, generate_answer, rewrite_query
+from app.search.vllm_client import (
+    describe_image_for_search,
+    generate_answer,
+    generate_answer_stream,
+    rewrite_query,
+)
 from app.vectordb.qdrant_client import ensure_collection, search_pages, upsert_page
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -343,112 +349,170 @@ def search_documents(
         return JSONResponse(status_code=500, content={"status": "error", "detail": str(e)})
 
 
+def _prepare_rag_context(question: str, top_k: int = 0) -> dict:
+    """검색 → 리랭킹 → 컨텍스트 준비 (ask / ask/stream 공용).
+
+    Returns:
+        {"page_images", "ocr_for_vlm", "source_info"} 또는
+        {"early_return": dict} (결과 없을 때)
+    """
+    # 0. 쿼리 리라이팅
+    try:
+        search_query = rewrite_query(question)
+    except Exception as e:
+        logger.warning("쿼리 리라이팅 실패 (원본 사용): %s", e)
+        search_query = question
+
+    # 1. 쿼리 임베딩
+    text_vector = embed_query_text(search_query)
+    image_vectors = embed_query_for_images(search_query)
+
+    # 2. Qdrant 하이브리드 검색
+    results = search_pages(
+        text_query_vector=text_vector,
+        image_query_vectors=image_vectors,
+        limit=15,
+    )
+
+    if not results:
+        return {"early_return": {
+            "answer": "관련 문서를 찾을 수 없습니다. 다른 질문을 시도해주세요.",
+            "sources": [],
+        }}
+
+    # 3. 리랭킹
+    ocr_texts = [r["ocr_text"] for r in results]
+    ranked = rerank(search_query, ocr_texts, top_k=len(results))
+
+    # 4. Adaptive top_k
+    if top_k <= 0:
+        rerank_scores_sorted = [score for _, score in ranked]
+        effective_k = _compute_adaptive_k(rerank_scores_sorted)
+    else:
+        effective_k = top_k
+
+    # 5. RRF 결합
+    rerank_order = {idx: rank for rank, (idx, _) in enumerate(ranked)}
+    rerank_scores = {idx: score for idx, score in ranked}
+    RRF_K = 60
+    SEARCH_WEIGHT = 1.5
+    RERANK_WEIGHT = 1.0
+
+    fused = []
+    for search_rank in range(len(results)):
+        rr_rank = rerank_order.get(search_rank, len(results))
+        score = (
+            SEARCH_WEIGHT / (RRF_K + search_rank)
+            + RERANK_WEIGHT / (RRF_K + rr_rank)
+        )
+        fused.append((search_rank, score))
+
+    fused.sort(key=lambda x: x[1], reverse=True)
+
+    # 6. 앵커 문서 확장
+    top_indices = _expand_anchor_document(results, fused, effective_k)
+    top_results = [results[idx] for idx in top_indices]
+
+    for idx in top_indices:
+        results[idx]["rerank_score"] = rerank_scores.get(idx, 0.0)
+
+    # 이미지 전송: 텍스트 충분도 기반 결정
+    page_images = []
+    img_count = 0
+    for r in top_results:
+        ocr_text = r.get("ocr_text", "")
+        img_path = r.get("image_path", "")
+        file_ext = Path(r.get("file_name", "")).suffix.lower()
+        is_image_file = file_ext in IMAGE_EXTENSIONS
+        text_sufficient = (
+            not is_image_file
+            and len(ocr_text.strip()) >= settings.text_sufficient_length
+        )
+        if not text_sufficient and img_path and Path(img_path).exists():
+            page_images.append(Image.open(img_path).convert("RGB"))
+            img_count += 1
+        else:
+            page_images.append(None)
+    logger.info("VLM 전송: 이미지 %d장 (눈 필요) + 텍스트 전용 %d장", img_count, len(top_results) - img_count)
+
+    source_info = [
+        {"file_name": r["file_name"], "page_number": r["page_number"]}
+        for r in top_results
+    ]
+    ocr_for_vlm = [r["ocr_text"] for r in top_results]
+
+    return {
+        "page_images": page_images,
+        "ocr_for_vlm": ocr_for_vlm,
+        "source_info": source_info,
+    }
+
+
 @app.post("/ask")
 def ask_question(
     question: str = Form(...),
-    top_k: int = Form(0),  # 0 = adaptive (리랭커 점수 기반 자동 결정)
+    top_k: int = Form(0),
 ):
-    """질문 → 쿼리 리라이팅 → 검색 → 리랭킹 → VLM 답변 생성 (전체 RAG 파이프라인)."""
+    """질문 → 검색 → 리랭킹 → VLM 답변 생성 (비스트리밍)."""
     try:
-        # 0. 쿼리 리라이팅 (짧거나 모호한 질문을 검색에 유리하게 확장)
-        try:
-            search_query = rewrite_query(question)
-        except Exception as e:
-            logger.warning("쿼리 리라이팅 실패 (원본 사용): %s", e)
-            search_query = question
-
-        # 1. 쿼리 임베딩 (리라이팅된 쿼리로 검색)
-        text_vector = embed_query_text(search_query)
-        image_vectors = embed_query_for_images(search_query)
-
-        # 2. Qdrant 하이브리드 검색 (넓은 풀에서 후보 확보)
-        results = search_pages(
-            text_query_vector=text_vector,
-            image_query_vectors=image_vectors,
-            limit=15,
-        )
-
-        if not results:
-            return {
-                "answer": "관련 문서를 찾을 수 없습니다. 다른 질문을 시도해주세요.",
-                "sources": [],
-            }
-
-        # 3. 리랭킹 (리라이팅된 쿼리로 매칭)
-        ocr_texts = [r["ocr_text"] for r in results]
-        ranked = rerank(search_query, ocr_texts, top_k=len(results))
-
-        # 4. Adaptive top_k 결정 (리랭커 점수 분포 기반)
-        if top_k <= 0:
-            rerank_scores_sorted = [score for _, score in ranked]
-            effective_k = _compute_adaptive_k(rerank_scores_sorted)
-        else:
-            effective_k = top_k
-
-        # 5. 검색 순위 + 리랭크 순위 RRF 결합
-        rerank_order = {idx: rank for rank, (idx, _) in enumerate(ranked)}
-        rerank_scores = {idx: score for idx, score in ranked}
-        RRF_K = 60
-        SEARCH_WEIGHT = 1.5
-        RERANK_WEIGHT = 1.0
-
-        fused = []
-        for search_rank in range(len(results)):
-            rr_rank = rerank_order.get(search_rank, len(results))
-            score = (
-                SEARCH_WEIGHT / (RRF_K + search_rank)
-                + RERANK_WEIGHT / (RRF_K + rr_rank)
-            )
-            fused.append((search_rank, score))
-
-        fused.sort(key=lambda x: x[1], reverse=True)
-
-        # 6. 앵커 문서 확장 (같은 문서 내 페이지 추가)
-        top_indices = _expand_anchor_document(results, fused, effective_k)
-        top_results = [results[idx] for idx in top_indices]
-
-        # 선택된 결과에 리랭크 점수 기록 (디버깅용)
-        for idx in top_indices:
-            results[idx]["rerank_score"] = rerank_scores.get(idx, 0.0)
-
-        # 이미지 전송: 텍스트 충분도 기반 결정
-        # - 이미지 원본 파일 (.png, .jpg 등) → 항상 이미지 전송 (OCR은 레이아웃 손실)
-        # - 텍스트가 충분한 페이지 → 텍스트만 (눈 불필요)
-        # - 텍스트가 부족한 페이지 → 이미지 필요 (스캔 문서 등)
-        page_images = []
-        img_count = 0
-        for r in top_results:
-            ocr_text = r.get("ocr_text", "")
-            img_path = r.get("image_path", "")
-            file_ext = Path(r.get("file_name", "")).suffix.lower()
-            is_image_file = file_ext in IMAGE_EXTENSIONS
-            text_sufficient = (
-                not is_image_file  # 이미지 파일은 항상 "눈 필요"
-                and len(ocr_text.strip()) >= settings.text_sufficient_length
-            )
-            if not text_sufficient and img_path and Path(img_path).exists():
-                page_images.append(Image.open(img_path).convert("RGB"))
-                img_count += 1
-            else:
-                page_images.append(None)  # 텍스트 충분 → 이미지 불필요
-        logger.info("VLM 전송: 이미지 %d장 (눈 필요) + 텍스트 전용 %d장", img_count, len(top_results) - img_count)
-
-        # 7. VLM 답변 생성 (이미지/텍스트 혼합 지원)
-        source_info = [
-            {"file_name": r["file_name"], "page_number": r["page_number"]}
-            for r in top_results
-        ]
-        ocr_for_vlm = [r["ocr_text"] for r in top_results]
+        ctx = _prepare_rag_context(question, top_k)
+        if "early_return" in ctx:
+            return ctx["early_return"]
 
         result = generate_answer(
             question=question,
-            page_images=page_images,
-            ocr_texts=ocr_for_vlm,
-            source_info=source_info,
+            page_images=ctx["page_images"],
+            ocr_texts=ctx["ocr_for_vlm"],
+            source_info=ctx["source_info"],
         )
-
         return result
 
     except Exception as e:
         logger.exception("답변 생성 실패")
         return JSONResponse(status_code=500, content={"status": "error", "detail": str(e)})
+
+
+@app.post("/ask/stream")
+def ask_question_stream(
+    question: str = Form(...),
+    top_k: int = Form(0),
+):
+    """질문 → 검색 → 리랭킹 → VLM SSE 스트리밍 답변."""
+
+    def event_stream():
+        try:
+            ctx = _prepare_rag_context(question, top_k)
+
+            if "early_return" in ctx:
+                data = ctx["early_return"]
+                yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+
+            # 출처 정보 먼저 전송 (프론트에서 미리 표시 가능)
+            yield f"data: {json.dumps({'sources': ctx['source_info']}, ensure_ascii=False)}\n\n"
+
+            # VLM 스트리밍 답변
+            for token in generate_answer_stream(
+                question=question,
+                page_images=ctx["page_images"],
+                ocr_texts=ctx["ocr_for_vlm"],
+                source_info=ctx["source_info"],
+            ):
+                yield f"data: {json.dumps({'token': token}, ensure_ascii=False)}\n\n"
+
+            yield "data: [DONE]\n\n"
+
+        except Exception as e:
+            logger.exception("스트리밍 답변 생성 실패")
+            yield f"data: {json.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"
+            yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )

@@ -33,32 +33,53 @@
 
     <!-- 대화 영역 -->
     <div id="chat-area" class="chat-area">
-      <!-- 상단 바 -->
-      <div class="top-bar">
-        <span class="top-logo" onclick="resetUI()">Nuri Chatbot</span>
-      </div>
-
-      <!-- 대화 메시지 영역 -->
-      <div id="chat-messages" class="chat-messages"></div>
-
-      <!-- 하단 입력창 -->
-      <div class="bottom-bar">
-        <div class="bottom-input-box">
-          <button id="bottom-attach-btn" class="attach-btn attach-btn-sm" title="파일 첨부">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <!-- 사이드바: 대화 이력 -->
+      <aside id="sidebar" class="sidebar">
+        <div class="sidebar-header">
+          <span class="sidebar-title">대화 이력</span>
+          <button id="new-chat-btn" class="new-chat-btn" title="새 대화">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
             </svg>
           </button>
-          <input type="text" id="bottom-query-input" placeholder="후속 질문을 입력하세요..." autocomplete="off">
-          <button id="bottom-send-btn" class="search-btn search-btn-sm" title="전송">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M5 12h14M12 5l7 7-7 7"/>
+        </div>
+        <div id="history-list" class="history-list"></div>
+      </aside>
+
+      <!-- 메인 채팅 영역 -->
+      <div class="chat-main">
+        <!-- 상단 바 -->
+        <div class="top-bar">
+          <button id="sidebar-toggle" class="sidebar-toggle" title="대화 이력">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
             </svg>
           </button>
+          <span class="top-logo" onclick="resetUI()">Nuri Chatbot</span>
         </div>
-        <div id="bottom-file-badge" class="file-badge file-badge-bottom hidden">
-          <span id="bottom-file-name"></span>
-          <button id="bottom-file-remove" class="file-remove" title="제거">&times;</button>
+
+        <!-- 대화 메시지 영역 -->
+        <div id="chat-messages" class="chat-messages"></div>
+
+        <!-- 하단 입력창 -->
+        <div class="bottom-bar">
+          <div class="bottom-input-box">
+            <button id="bottom-attach-btn" class="attach-btn attach-btn-sm" title="파일 첨부">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+            </button>
+            <input type="text" id="bottom-query-input" placeholder="후속 질문을 입력하세요..." autocomplete="off">
+            <button id="bottom-send-btn" class="search-btn search-btn-sm" title="전송">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M5 12h14M12 5l7 7-7 7"/>
+              </svg>
+            </button>
+          </div>
+          <div id="bottom-file-badge" class="file-badge file-badge-bottom hidden">
+            <span id="bottom-file-name"></span>
+            <button id="bottom-file-remove" class="file-remove" title="제거">&times;</button>
+          </div>
         </div>
       </div>
     </div>

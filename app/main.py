@@ -17,7 +17,7 @@ from app.ingest.embedder import (
     embed_texts,
 )
 from app.search.reranker import rerank
-from app.search.vllm_client import generate_answer
+from app.search.vllm_client import describe_image_for_search, generate_answer
 from app.vectordb.qdrant_client import ensure_collection, search_pages, upsert_page
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -108,6 +108,16 @@ async def ingest_document(
             "doc_type": doc_type,
             "summary": summary,
         }
+
+        # 이미지 파일: VLM 설명을 OCR 텍스트 앞에 붙여 검색 품질 향상
+        # (OCR은 레이아웃/컨텍스트 키워드를 놓치므로 VLM이 보완)
+        if suffix in IMAGE_EXTENSIONS and page_images:
+            try:
+                description = describe_image_for_search(page_images[0])
+                page_texts = [f"[이미지 설명] {description}\n\n{t}" for t in page_texts]
+                logger.info("이미지 설명 추가 완료: %s", file.filename)
+            except Exception as e:
+                logger.warning("이미지 설명 생성 실패 (OCR만 사용): %s", e)
 
         point_ids = []
 
@@ -395,14 +405,20 @@ def ask_question(
             results[idx]["rerank_score"] = rerank_scores.get(idx, 0.0)
 
         # 이미지 전송: 텍스트 충분도 기반 결정
+        # - 이미지 원본 파일 (.png, .jpg 등) → 항상 이미지 전송 (OCR은 레이아웃 손실)
         # - 텍스트가 충분한 페이지 → 텍스트만 (눈 불필요)
-        # - 텍스트가 부족한 페이지 → 이미지 필요 (스캔 문서, 이미지)
+        # - 텍스트가 부족한 페이지 → 이미지 필요 (스캔 문서 등)
         page_images = []
         img_count = 0
         for r in top_results:
             ocr_text = r.get("ocr_text", "")
             img_path = r.get("image_path", "")
-            text_sufficient = len(ocr_text.strip()) >= settings.text_sufficient_length
+            file_ext = Path(r.get("file_name", "")).suffix.lower()
+            is_image_file = file_ext in IMAGE_EXTENSIONS
+            text_sufficient = (
+                not is_image_file  # 이미지 파일은 항상 "눈 필요"
+                and len(ocr_text.strip()) >= settings.text_sufficient_length
+            )
             if not text_sufficient and img_path and Path(img_path).exists():
                 page_images.append(Image.open(img_path).convert("RGB"))
                 img_count += 1

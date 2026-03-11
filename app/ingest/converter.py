@@ -94,6 +94,34 @@ def convert_office_to_pdf(file_path: Path) -> Path:
     return pdf_path
 
 
+MIN_TEXT_LENGTH = 30  # 이 글자수 미만이면 OCR 폴백 실행
+
+
+def _ocr_fallback_for_empty_pages(
+    texts: list[str], images: list[Image.Image],
+) -> list[str]:
+    """pdfplumber 텍스트가 부족한 페이지에 PaddleOCR 폴백 실행.
+
+    스캔 PDF나 이미지 기반 PDF에서 텍스트 추출 품질을 보장한다.
+    """
+    from app.ingest.ocr import extract_text
+
+    ocr_count = 0
+    for i, text in enumerate(texts):
+        if len(text.strip()) < MIN_TEXT_LENGTH and i < len(images):
+            try:
+                ocr_text = extract_text(images[i])
+                if len(ocr_text.strip()) > len(text.strip()):
+                    texts[i] = ocr_text
+                    ocr_count += 1
+            except Exception as e:
+                logger.warning("OCR 폴백 실패 (p.%d): %s", i + 1, e)
+
+    if ocr_count:
+        logger.info("OCR 폴백: %d/%d 페이지에 OCR 텍스트 적용", ocr_count, len(texts))
+    return texts
+
+
 def process_document(
     file_path: Path,
 ) -> tuple[list[Image.Image], Path | None, list[str], list[dict] | None]:
@@ -122,16 +150,20 @@ def process_document(
         pdf_path = convert_hwp_to_pdf(file_path)
         images = pdf_to_page_images(pdf_path)
         texts = extract_texts_from_pdf(pdf_path)
+        texts = _ocr_fallback_for_empty_pages(texts, images)
         return images, pdf_path, texts, None
     elif suffix == ".pdf":
         images = pdf_to_page_images(file_path)
         texts = extract_texts_from_pdf(file_path)
+        # 스캔 PDF 폴백: 텍스트가 없는 페이지에 OCR 실행
+        texts = _ocr_fallback_for_empty_pages(texts, images)
         return images, None, texts, None
     elif suffix in (".docx", ".doc", ".hwpx", ".pptx", ".ppt",
                      ".csv", ".odt", ".ods", ".odp", ".rtf"):
         pdf_path = convert_office_to_pdf(file_path)
         images = pdf_to_page_images(pdf_path)
         texts = extract_texts_from_pdf(pdf_path)
+        texts = _ocr_fallback_for_empty_pages(texts, images)
         return images, pdf_path, texts, None
     elif suffix in (".png", ".jpg", ".jpeg", ".tiff", ".bmp", ".gif", ".webp"):
         img = Image.open(file_path).convert("RGB")

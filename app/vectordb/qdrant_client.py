@@ -153,3 +153,49 @@ def search_pages(
 
     logger.info("하이브리드 검색 완료: %d 결과", len(pages))
     return pages
+
+
+def get_document_pages(
+    file_name: str,
+    limit: int = 20,
+) -> list[dict]:
+    """특정 문서의 전체 페이지를 page_number 순으로 조회.
+
+    문서 확장 모드에서 사용: 검색 결과에 없는 페이지도 포함하여
+    문서 전체 컨텍스트를 확보한다.
+    """
+    client = get_client()
+
+    results = client.scroll(
+        collection_name=settings.collection_name,
+        scroll_filter=models.Filter(
+            must=[
+                models.FieldCondition(
+                    key="file_name",
+                    match=models.MatchValue(value=file_name),
+                ),
+            ]
+        ),
+        limit=limit,
+        with_payload=True,
+    )
+
+    pages = []
+    for point in results[0]:  # scroll returns (points, next_offset)
+        pages.append({
+            "id": point.id,
+            "score": 0.0,
+            "file_name": point.payload.get("file_name", ""),
+            "page_number": point.payload.get("page_number", 0),
+            "ocr_text": point.payload.get("ocr_text", ""),
+            "image_path": point.payload.get("image_path", ""),
+            "department": point.payload.get("department", ""),
+            "doc_type": point.payload.get("doc_type", ""),
+            "sheet": point.payload.get("sheet", ""),
+            "section": point.payload.get("section", ""),
+        })
+
+    # 페이지 번호순 정렬
+    pages.sort(key=lambda p: p["page_number"])
+    logger.info("문서 전체 조회: %s → %d 페이지", file_name, len(pages))
+    return pages

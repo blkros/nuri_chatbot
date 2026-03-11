@@ -447,6 +447,8 @@ async function doSearch(question) {
 // ── 마크다운 기본 포맷 ──
 
 function formatAnswer(text) {
+  // VLM이 출처를 생성하더라도 제거
+  text = text.replace(/\[출처:.*?\]/g, "").replace(/\n*참조\s*문서[：:].*$/gm, "").trim();
   return escapeHtml(text)
     .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
     .replace(/\n/g, "<br>");

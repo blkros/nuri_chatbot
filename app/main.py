@@ -24,7 +24,12 @@ from app.search.vllm_client import (
     generate_answer_stream,
     rewrite_query,
 )
-from app.vectordb.qdrant_client import ensure_collection, search_pages, upsert_page
+from app.vectordb.qdrant_client import (
+    ensure_collection,
+    get_document_pages,
+    search_pages,
+    upsert_page,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -246,33 +251,76 @@ def _compute_adaptive_k(rerank_scores_sorted: list[float]) -> int:
     return k
 
 
-def _expand_anchor_document(
+def _expand_with_doc_concentration(
     results: list[dict],
     fused: list[tuple[int, float]],
     initial_k: int,
-) -> list[int]:
-    """앵커 문서 확장: top-1 결과의 동일 문서에서 추가 페이지 포함.
+) -> list[dict]:
+    """문서 집중도 기반 컨텍스트 확장.
 
-    리랭커가 개요 페이지만 높게 평가하고 상세 페이지를 낮게 평가하는 경우,
-    같은 문서 내 페이지를 추가로 포함하여 상세 컨텍스트를 확보한다.
-    다른 문서의 노이즈 유입 없이 안전하게 확장.
+    검색 결과를 doc_id(file_name)별로 집계하여:
+    1) 집중도 높은 경우 (같은 문서가 결과의 50%+) → Qdrant scroll로 문서 전체 페이지 조회
+    2) 집중도 낮은 경우 → 기존처럼 검색 결과 내에서만 확장
+
+    Returns:
+        최종 컨텍스트에 포함할 결과 리스트 (page_number순 정렬)
     """
     top_indices = [idx for idx, _ in fused[:initial_k]]
-
     if not top_indices:
-        return top_indices
+        return []
 
-    # Top-1 결과의 파일 = 앵커 문서 후보
-    anchor_file = results[fused[0][0]]["file_name"]
+    # ── 문서별 집중도 분석 ──
+    from collections import Counter
+    doc_counts = Counter(results[idx]["file_name"] for idx, _ in fused[:initial_k])
+    total = len(top_indices)
+    anchor_file, anchor_count = doc_counts.most_common(1)[0]
+    concentration = anchor_count / total
 
-    # 앵커 문서가 검색 결과에 3개 이상 존재할 때만 확장
-    # (단일/소수 페이지 문서는 확장 불필요)
-    anchor_count = sum(1 for r in results if r["file_name"] == anchor_file)
-    if anchor_count < 3:
-        return top_indices
+    logger.info(
+        "문서 집중도: %s = %d/%d (%.0f%%)",
+        anchor_file, anchor_count, total, concentration * 100,
+    )
 
-    # 나머지 결과에서 앵커 문서 페이지 추가
-    # (확장 페이지는 VLM에 텍스트만 전달되므로 이미지 토큰 부담 없음)
+    # ── 집중도 높음 → 문서 전체 페이지 조회 (Qdrant scroll) ──
+    if concentration >= settings.doc_concentration_threshold:
+        # limit+1로 조회해서 문서가 limit 이하인지 판별
+        all_pages = get_document_pages(
+            anchor_file,
+            limit=settings.max_doc_expansion_pages + 1,
+        )
+        doc_is_small = len(all_pages) <= settings.max_doc_expansion_pages
+
+        other_results = [
+            results[idx] for idx in top_indices
+            if results[idx]["file_name"] != anchor_file
+        ]
+
+        if doc_is_small:
+            # 문서가 작으면 전체 포함
+            logger.info(
+                "문서 확장 (whole-doc): %s → %d 페이지 전체",
+                anchor_file, len(all_pages),
+            )
+            return all_pages + other_results[:2]
+
+        # 문서가 크면 검색에 걸린 페이지 + 인접 페이지(±1)
+        all_pages = all_pages[:settings.max_doc_expansion_pages]
+        existing_pages = {results[idx]["page_number"] for idx in top_indices
+                         if results[idx]["file_name"] == anchor_file}
+        expanded = []
+        for page in all_pages:
+            pn = page["page_number"]
+            if pn in existing_pages or any(abs(pn - ep) <= 1 for ep in existing_pages):
+                expanded.append(page)
+
+        logger.info(
+            "문서 확장 (neighbor): %s → %d 페이지 (검색 %d + 인접)",
+            anchor_file, len(expanded), len(existing_pages),
+        )
+        return expanded + other_results[:2]
+
+    # ── 집중도 낮음 → 기존 방식: 검색 결과 내에서만 확장 ──
+    # 앵커 문서 페이지를 fused 순서에서 추가
     for idx, _ in fused[initial_k:]:
         if len(top_indices) >= settings.adaptive_max_k:
             break
@@ -280,14 +328,13 @@ def _expand_anchor_document(
             top_indices.append(idx)
 
     if len(top_indices) > initial_k:
-        # 페이지 번호순 정렬 (자연스러운 읽기 순서)
         top_indices.sort(key=lambda i: results[i].get("page_number", 0))
         logger.info(
-            "앵커 문서 확장: %s (%d→%d 페이지)",
+            "앵커 문서 확장 (기존): %s (%d→%d 페이지)",
             anchor_file, initial_k, len(top_indices),
         )
 
-    return top_indices
+    return [results[idx] for idx in top_indices]
 
 
 # ─── 검색 + 답변 ────────────────────────────────────────────
@@ -321,8 +368,8 @@ def search_documents(
         rerank_order = {idx: rank for rank, (idx, _) in enumerate(ranked)}
         rerank_scores = {idx: score for idx, score in ranked}
         RRF_K = 60
-        SEARCH_WEIGHT = 1.5
-        RERANK_WEIGHT = 1.0
+        SEARCH_WEIGHT = 1.0
+        RERANK_WEIGHT = 1.5
 
         fused = []
         for search_rank in range(len(results)):
@@ -380,6 +427,18 @@ def _prepare_rag_context(question: str, top_k: int = 0) -> dict:
             "sources": [],
         }}
 
+    # 2.5 중복 제거 (text/image prefetch에서 같은 페이지가 중복될 수 있음)
+    seen = set()
+    deduped = []
+    for r in results:
+        key = (r["file_name"], r["page_number"])
+        if key not in seen:
+            seen.add(key)
+            deduped.append(r)
+    if len(deduped) < len(results):
+        logger.info("검색 결과 중복 제거: %d → %d", len(results), len(deduped))
+        results = deduped
+
     # 3. 리랭킹
     ocr_texts = [r["ocr_text"] for r in results]
     ranked = rerank(search_query, ocr_texts, top_k=len(results))
@@ -395,8 +454,8 @@ def _prepare_rag_context(question: str, top_k: int = 0) -> dict:
     rerank_order = {idx: rank for rank, (idx, _) in enumerate(ranked)}
     rerank_scores = {idx: score for idx, score in ranked}
     RRF_K = 60
-    SEARCH_WEIGHT = 1.5
-    RERANK_WEIGHT = 1.0
+    SEARCH_WEIGHT = 1.0
+    RERANK_WEIGHT = 1.5
 
     fused = []
     for search_rank in range(len(results)):
@@ -409,14 +468,10 @@ def _prepare_rag_context(question: str, top_k: int = 0) -> dict:
 
     fused.sort(key=lambda x: x[1], reverse=True)
 
-    # 6. 앵커 문서 확장
-    top_indices = _expand_anchor_document(results, fused, effective_k)
-    top_results = [results[idx] for idx in top_indices]
+    # 6. 문서 집중도 기반 컨텍스트 확장
+    top_results = _expand_with_doc_concentration(results, fused, effective_k)
 
-    for idx in top_indices:
-        results[idx]["rerank_score"] = rerank_scores.get(idx, 0.0)
-
-    # 이미지 전송: 텍스트 충분도 기반 결정
+    # 이미지 전송: 텍스트 충분도 기반 결정 + 최대 이미지 수 제한
     page_images = []
     img_count = 0
     for r in top_results:
@@ -428,7 +483,12 @@ def _prepare_rag_context(question: str, top_k: int = 0) -> dict:
             not is_image_file
             and len(ocr_text.strip()) >= settings.text_sufficient_length
         )
-        if not text_sufficient and img_path and Path(img_path).exists():
+        if (
+            not text_sufficient
+            and img_path
+            and Path(img_path).exists()
+            and img_count < settings.max_context_images
+        ):
             page_images.append(Image.open(img_path).convert("RGB"))
             img_count += 1
         else:

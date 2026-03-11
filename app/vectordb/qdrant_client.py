@@ -178,6 +178,42 @@ def search_pages(
     return pages
 
 
+def list_documents() -> list[dict]:
+    """인제스트된 문서 목록 조회 (file_name별 페이지 수, 메타데이터)."""
+    client = get_client()
+    documents: dict[str, dict] = {}
+    offset = None
+
+    while True:
+        points, offset = client.scroll(
+            collection_name=settings.collection_name,
+            limit=100,
+            offset=offset,
+            with_payload=["file_name", "page_number", "department", "doc_type", "summary"],
+        )
+        if not points:
+            break
+        for point in points:
+            fname = point.payload.get("file_name", "")
+            if not fname:
+                continue
+            if fname not in documents:
+                documents[fname] = {
+                    "file_name": fname,
+                    "pages": 0,
+                    "department": point.payload.get("department", ""),
+                    "doc_type": point.payload.get("doc_type", ""),
+                    "summary": point.payload.get("summary", ""),
+                }
+            documents[fname]["pages"] += 1
+        if offset is None:
+            break
+
+    result = sorted(documents.values(), key=lambda d: d["file_name"])
+    logger.info("문서 목록 조회: %d개", len(result))
+    return result
+
+
 def get_document_pages(
     file_name: str,
     limit: int = 20,

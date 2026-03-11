@@ -28,6 +28,7 @@ from app.vectordb.qdrant_client import (
     delete_document_pages,
     ensure_collection,
     get_document_pages,
+    list_documents,
     search_pages,
     upsert_page,
 )
@@ -213,6 +214,58 @@ async def ingest_document(
             file_path.unlink()
         if temp_pdf_path and temp_pdf_path.exists():
             temp_pdf_path.unlink()
+
+
+# ─── 문서 관리 ───────────────────────────────────────────────
+
+
+@app.get("/documents")
+def get_documents():
+    """인제스트된 문서 목록 조회."""
+    try:
+        docs = list_documents()
+        return {"documents": docs, "total": len(docs)}
+    except Exception as e:
+        logger.exception("문서 목록 조회 실패")
+        return JSONResponse(status_code=500, content={"status": "error", "detail": str(e)})
+
+
+@app.delete("/documents/{file_name}")
+def delete_document(file_name: str):
+    """특정 문서 삭제 (Qdrant 포인트 + 저장된 이미지)."""
+    import shutil
+
+    try:
+        # 1. 저장된 이미지 경로 조회 후 삭제
+        pages = get_document_pages(file_name, limit=500)
+        if not pages:
+            raise HTTPException(status_code=404, detail=f"문서를 찾을 수 없습니다: {file_name}")
+
+        deleted_dirs = set()
+        for page in pages:
+            img_path = page.get("image_path", "")
+            if img_path and Path(img_path).exists():
+                deleted_dirs.add(Path(img_path).parent)
+
+        # 2. Qdrant에서 포인트 삭제
+        delete_document_pages(file_name)
+
+        # 3. 이미지 디렉토리 삭제
+        for d in deleted_dirs:
+            shutil.rmtree(d, ignore_errors=True)
+            logger.info("이미지 디렉토리 삭제: %s", d)
+
+        return {
+            "status": "success",
+            "file_name": file_name,
+            "deleted_pages": len(pages),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("문서 삭제 실패: %s", file_name)
+        return JSONResponse(status_code=500, content={"status": "error", "detail": str(e)})
 
 
 # ─── Adaptive top_k ──────────────────────────────────────────

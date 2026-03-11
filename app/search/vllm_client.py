@@ -30,40 +30,62 @@ def _image_to_base64(image: Image.Image, quality: int = 85) -> str:
     return base64.b64encode(buf.getvalue()).decode("utf-8")
 
 
-def rewrite_query(question: str) -> str:
+def rewrite_query(question: str, history: list[dict] | None = None) -> str:
     """사용자 질문을 검색에 유리한 형태로 확장.
 
     짧거나 모호한 질문에 관련 키워드를 추가하여
     임베딩 검색과 리랭킹 품질을 높인다.
+    멀티턴 대화 시 이전 대화 맥락을 반영하여 후속 질문을 자기 완결적으로 변환.
     텍스트 전용 호출이라 빠름 (~0.5초).
     """
     from openai import OpenAI
 
     client = OpenAI(base_url=settings.vllm_base_url, api_key="dummy")
 
+    # 멀티턴 히스토리가 있으면 시스템 프롬프트에 맥락 해석 지시 추가
+    if history:
+        system_content = (
+            "/no_think\n"
+            "사내 문서 검색 쿼리 확장기.\n"
+            "이전 대화 맥락이 주어집니다. 현재 질문이 후속 질문이면 "
+            "이전 맥락을 반영하여 자기 완결적인 검색 쿼리로 변환하세요.\n"
+            "예: 이전='위임전결 규정 알려줘', 현재='표로 정리해줘' → '위임전결 규정 표 정리'\n"
+            "질문에 없는 내용을 추가하지 마세요. 1줄, 50자 이내."
+        )
+    else:
+        system_content = (
+            "/no_think\n"
+            "사내 문서 검색 쿼리 확장기.\n"
+            "질문을 검색에 유리하게 다듬되, 질문에 없는 내용을 절대 추가하지 마세요.\n"
+            "동의어/유의어/공식 용어 추가만 허용. 1줄, 50자 이내."
+        )
+
+    messages = [{"role": "system", "content": system_content}]
+
+    # few-shot 예시
+    messages.extend([
+        {"role": "user", "content": "결재 어떻게해?"},
+        {"role": "assistant", "content": "결재 승인 절차 전결 위임전결 규정"},
+        {"role": "user", "content": "급식 메뉴 알려줘"},
+        {"role": "assistant", "content": "급식 메뉴 식단표 중식 석식"},
+    ])
+
+    # 멀티턴 히스토리가 있으면 이전 대화 추가 (최근 2턴)
+    if history:
+        recent = history[-4:]  # 최근 2턴 (user+ai 각 1쌍 = 4메시지)
+        for msg in recent:
+            role = "user" if msg["role"] == "user" else "assistant"
+            # 검색 쿼리 확장용이므로 답변은 요약만
+            content = msg["content"]
+            if role == "assistant":
+                content = content[:100]
+            messages.append({"role": role, "content": content})
+
+    messages.append({"role": "user", "content": question})
+
     response = client.chat.completions.create(
         model=settings.vllm_model,
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    "/no_think\n"
-                    "사내 문서 검색 쿼리 확장기.\n"
-                    "질문을 검색에 유리하게 다듬되, 질문에 없는 내용을 절대 추가하지 마세요.\n"
-                    "동의어/유의어/공식 용어 추가만 허용. 1줄, 50자 이내."
-                ),
-            },
-            # few-shot 예시
-            {"role": "user", "content": "결재 어떻게해?"},
-            {"role": "assistant", "content": "결재 승인 절차 전결 위임전결 규정"},
-            {"role": "user", "content": "급식 메뉴 알려줘"},
-            {"role": "assistant", "content": "급식 메뉴 식단표 중식 석식"},
-            {"role": "user", "content": "회의 결론이 뭐야?"},
-            {"role": "assistant", "content": "회의 결론 결과 요약 의결사항"},
-            {"role": "user", "content": "pulsar 챗봇 기능별로 정리해줘"},
-            {"role": "assistant", "content": "Pulsar 챗봇 기능 목록 설명 정리"},
-            {"role": "user", "content": question},
-        ],
+        messages=messages,
         max_tokens=80,
         temperature=0.1,
     )
@@ -150,8 +172,21 @@ def _build_messages(
     page_images: list[Image.Image | None],
     ocr_texts: list[str],
     source_info: list[dict],
+    history: list[dict] | None = None,
 ) -> list[dict]:
     """VLM API 호출용 메시지 리스트 구성 (generate_answer / generate_answer_stream 공용)."""
+    messages = [{"role": "system", "content": _SYSTEM_PROMPT}]
+
+    # 멀티턴: 이전 대화를 user/assistant 메시지로 추가 (최근 3턴, 토큰 절약)
+    if history:
+        recent = history[-6:]  # 최근 3턴 (user+ai 쌍)
+        for msg in recent:
+            role = "user" if msg["role"] == "user" else "assistant"
+            # 이전 답변은 500자로 제한 (토큰 절약)
+            content = msg["content"][:500] if role == "assistant" else msg["content"]
+            messages.append({"role": role, "content": content})
+
+    # 현재 질문 + 문서 컨텍스트
     content = []
     for i, (img, ocr_text, info) in enumerate(
         zip(page_images, ocr_texts, source_info)
@@ -176,10 +211,8 @@ def _build_messages(
         "text": f"\n질문: {question}",
     })
 
-    return [
-        {"role": "system", "content": _SYSTEM_PROMPT},
-        {"role": "user", "content": content},
-    ]
+    messages.append({"role": "user", "content": content})
+    return messages
 
 
 def generate_answer(
@@ -188,6 +221,7 @@ def generate_answer(
     ocr_texts: list[str],
     source_info: list[dict],
     max_tokens: int = 1536,
+    history: list[dict] | None = None,
 ) -> dict:
     """페이지 이미지/텍스트를 Qwen3-VL에 전송하여 답변 생성.
 
@@ -197,6 +231,7 @@ def generate_answer(
         ocr_texts: 각 페이지의 추출 텍스트
         source_info: 각 페이지의 출처 정보 [{"file_name", "page_number"}, ...]
         max_tokens: 최대 생성 토큰 수
+        history: 이전 대화 히스토리 [{"role": "user"|"ai", "content": str}, ...]
 
     Returns:
         {"answer": str, "sources": list[dict]}
@@ -204,7 +239,7 @@ def generate_answer(
     from openai import OpenAI
 
     client = OpenAI(base_url=settings.vllm_base_url, api_key="dummy")
-    messages = _build_messages(question, page_images, ocr_texts, source_info)
+    messages = _build_messages(question, page_images, ocr_texts, source_info, history)
 
     response = client.chat.completions.create(
         model=settings.vllm_model,
@@ -235,6 +270,7 @@ def generate_answer_stream(
     ocr_texts: list[str],
     source_info: list[dict],
     max_tokens: int = 1536,
+    history: list[dict] | None = None,
 ):
     """SSE 스트리밍용 답변 생성 제너레이터.
 
@@ -244,7 +280,7 @@ def generate_answer_stream(
     from openai import OpenAI
 
     client = OpenAI(base_url=settings.vllm_base_url, api_key="dummy")
-    messages = _build_messages(question, page_images, ocr_texts, source_info)
+    messages = _build_messages(question, page_images, ocr_texts, source_info, history)
 
     stream = client.chat.completions.create(
         model=settings.vllm_model,

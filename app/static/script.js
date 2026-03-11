@@ -375,6 +375,19 @@ async function doSearch(question) {
     const formData = new FormData();
     formData.append("question", question);
 
+    // 멀티턴: 현재 대화의 이전 메시지를 히스토리로 전송 (최근 6개 = 3턴)
+    if (currentConversationId) {
+      const convs = loadConversations();
+      const conv = convs.find(c => c.id === currentConversationId);
+      if (conv && conv.messages.length > 0) {
+        // 방금 추가한 현재 user 메시지 제외 (마지막 1개)
+        const prevMessages = conv.messages.slice(0, -1).slice(-6);
+        if (prevMessages.length > 0) {
+          formData.append("history", JSON.stringify(prevMessages));
+        }
+      }
+    }
+
     removeLoadingIndicator();
     const bubble = addStreamingAIMessage();
     let fullText = "";

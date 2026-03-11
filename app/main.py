@@ -397,16 +397,16 @@ def search_documents(
         return JSONResponse(status_code=500, content={"status": "error", "detail": str(e)})
 
 
-def _prepare_rag_context(question: str, top_k: int = 0) -> dict:
+def _prepare_rag_context(question: str, top_k: int = 0, history: list[dict] | None = None) -> dict:
     """검색 → 리랭킹 → 컨텍스트 준비 (ask / ask/stream 공용).
 
     Returns:
         {"page_images", "ocr_for_vlm", "source_info"} 또는
         {"early_return": dict} (결과 없을 때)
     """
-    # 0. 쿼리 리라이팅
+    # 0. 쿼리 리라이팅 (멀티턴 히스토리 반영)
     try:
-        search_query = rewrite_query(question)
+        search_query = rewrite_query(question, history=history)
     except Exception as e:
         logger.warning("쿼리 리라이팅 실패 (원본 사용): %s", e)
         search_query = question
@@ -513,10 +513,16 @@ def _prepare_rag_context(question: str, top_k: int = 0) -> dict:
 def ask_question(
     question: str = Form(...),
     top_k: int = Form(0),
+    history: str = Form("[]"),
 ):
     """질문 → 검색 → 리랭킹 → VLM 답변 생성 (비스트리밍)."""
     try:
-        ctx = _prepare_rag_context(question, top_k)
+        conv_history = json.loads(history) if history else []
+    except (json.JSONDecodeError, TypeError):
+        conv_history = []
+
+    try:
+        ctx = _prepare_rag_context(question, top_k, history=conv_history or None)
         if "early_return" in ctx:
             return ctx["early_return"]
 
@@ -525,6 +531,7 @@ def ask_question(
             page_images=ctx["page_images"],
             ocr_texts=ctx["ocr_for_vlm"],
             source_info=ctx["source_info"],
+            history=conv_history or None,
         )
         return result
 
@@ -537,12 +544,17 @@ def ask_question(
 def ask_question_stream(
     question: str = Form(...),
     top_k: int = Form(0),
+    history: str = Form("[]"),
 ):
     """질문 → 검색 → 리랭킹 → VLM SSE 스트리밍 답변."""
+    try:
+        conv_history = json.loads(history) if history else []
+    except (json.JSONDecodeError, TypeError):
+        conv_history = []
 
     def event_stream():
         try:
-            ctx = _prepare_rag_context(question, top_k)
+            ctx = _prepare_rag_context(question, top_k, history=conv_history or None)
 
             if "early_return" in ctx:
                 data = ctx["early_return"]
@@ -553,12 +565,13 @@ def ask_question_stream(
             # 출처 정보 먼저 전송 (프론트에서 미리 표시 가능)
             yield f"data: {json.dumps({'sources': ctx['source_info']}, ensure_ascii=False)}\n\n"
 
-            # VLM 스트리밍 답변
+            # VLM 스트리밍 답변 (멀티턴 히스토리 전달)
             for token in generate_answer_stream(
                 question=question,
                 page_images=ctx["page_images"],
                 ocr_texts=ctx["ocr_for_vlm"],
                 source_info=ctx["source_info"],
+                history=conv_history or None,
             ):
                 yield f"data: {json.dumps({'token': token}, ensure_ascii=False)}\n\n"
 

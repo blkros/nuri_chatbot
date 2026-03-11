@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Nuri Chatbot</title>
-  <link rel="stylesheet" href="/static/style.css?v=4">
+  <link rel="stylesheet" href="/static/style.css?v=7">
 </head>
 <body>
   <div id="app">
@@ -42,6 +42,9 @@
               <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
             </svg>
           </button>
+        </div>
+        <div class="sidebar-search">
+          <input type="text" id="history-search" placeholder="대화 검색..." autocomplete="off">
         </div>
         <div id="history-list" class="history-list"></div>
       </aside>
@@ -85,8 +88,8 @@
     </div>
   </div>
 
-  <input type="file" id="file-input" hidden>
+  <input type="file" id="file-input" hidden accept=".pdf,.hwp,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.gif,.bmp,.tiff,.csv">
   <div id="toast-container" class="toast-container"></div>
-  <script src="/static/script.js?v=4"></script>
+  <script src="/static/script.js?v=7"></script>
 </body>
 </html>

@@ -27,6 +27,21 @@ def get_reranker():
     return _reranker_model, _reranker_tokenizer
 
 
+RERANK_MAX_CHARS = 2000  # 리랭커에 전달할 패시지 최대 글자수
+
+
+def _truncate_for_reranker(text: str) -> str:
+    """긴 텍스트를 리랭커 토큰 한도에 맞게 스마트 절삭.
+
+    앞부분(주로 제목/헤더)과 뒷부분(종종 핵심 내용)을 모두 포함.
+    """
+    if len(text) <= RERANK_MAX_CHARS:
+        return text
+    front = RERANK_MAX_CHARS * 3 // 4  # 75%
+    back = RERANK_MAX_CHARS - front     # 25%
+    return text[:front] + "\n...\n" + text[-back:]
+
+
 def rerank(
     query: str, passages: list[str], top_k: int = 5
 ) -> list[tuple[int, float]]:
@@ -39,7 +54,7 @@ def rerank(
         return []
 
     model, tokenizer = get_reranker()
-    pairs = [[query, passage] for passage in passages]
+    pairs = [[query, _truncate_for_reranker(passage)] for passage in passages]
 
     with torch.no_grad():
         inputs = tokenizer(

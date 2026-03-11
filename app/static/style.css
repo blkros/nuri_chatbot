@@ -498,6 +498,191 @@ body {
   color: #5b9bf0;
 }
 
+/* ── 마크다운 테이블 ── */
+.md-table {
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 0.9em;
+  width: 100%;
+  overflow-x: auto;
+  display: block;
+}
+
+.md-table thead th {
+  background: #1a2a3a;
+  color: #7eb8f0;
+  font-weight: 600;
+  text-align: left;
+  padding: 8px 12px;
+  border: 1px solid #2a3a4a;
+  white-space: nowrap;
+}
+
+.md-table tbody td {
+  padding: 6px 12px;
+  border: 1px solid #2a3a4a;
+  color: #c8d6e5;
+}
+
+.md-table tbody tr:nth-child(even) {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.md-table tbody tr:hover {
+  background: rgba(91, 155, 240, 0.08);
+}
+
+.msg-ai .bubble h3,
+.msg-ai .bubble h4 {
+  color: #7eb8f0;
+  margin: 12px 0 6px 0;
+  font-size: 1.05em;
+}
+
+/* ── 출처 표시 바 ── */
+.sources-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid #2a3a4a;
+}
+
+.source-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  background: rgba(91, 155, 240, 0.1);
+  border: 1px solid rgba(91, 155, 240, 0.25);
+  border-radius: 12px;
+  font-size: 0.78rem;
+  color: #7eb8f0;
+  white-space: nowrap;
+}
+
+.source-chip::before {
+  content: "📄";
+  font-size: 0.7rem;
+}
+
+/* ── 복사 버튼 ── */
+.copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid #2a3a4a;
+  border-radius: 8px;
+  color: #5a6a7a;
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.copy-btn:hover {
+  border-color: #5b9bf0;
+  color: #5b9bf0;
+}
+
+.copy-btn.copied {
+  border-color: #4aca8a;
+  color: #4aca8a;
+}
+
+/* ── 출처 라벨 ── */
+.sources-label {
+  font-size: 0.75rem;
+  color: #5a6a7a;
+  align-self: center;
+  margin-right: 4px;
+}
+
+/* ── 코드 블록 ── */
+.code-block {
+  margin: 8px 0;
+  border: 1px solid #2a3a4a;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.code-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 12px;
+  background: #0a1219;
+  font-size: 0.75rem;
+  color: #5a6a7a;
+}
+
+.code-copy-btn {
+  background: transparent;
+  border: 1px solid #2a3a4a;
+  border-radius: 4px;
+  color: #5a6a7a;
+  font-size: 0.72rem;
+  padding: 2px 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.code-copy-btn:hover {
+  border-color: #5b9bf0;
+  color: #5b9bf0;
+}
+
+.code-block pre {
+  margin: 0;
+  padding: 12px;
+  background: #0f1923;
+  overflow-x: auto;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.code-block code {
+  color: #c8d6e5;
+  font-family: 'Consolas', 'Monaco', monospace;
+}
+
+/* ── 사이드바 검색 ── */
+.sidebar-search {
+  padding: 8px;
+  border-bottom: 1px solid #1a2533;
+  flex-shrink: 0;
+}
+
+.sidebar-search input {
+  width: 100%;
+  padding: 8px 12px;
+  background: #1a2533;
+  border: 1px solid #2a3a4a;
+  border-radius: 8px;
+  color: #e0e6ed;
+  font-size: 0.82rem;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.sidebar-search input::placeholder {
+  color: #3a4a5a;
+}
+
+.sidebar-search input:focus {
+  border-color: #5b9bf0;
+}
+
+/* ── 전송 버튼 비활성 ── */
+.search-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
 /* ── 로딩 (AI 타이핑 인디케이터) ── */
 .msg-loading {
   display: flex;

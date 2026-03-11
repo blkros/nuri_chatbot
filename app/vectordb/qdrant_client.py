@@ -14,7 +14,7 @@ _client = None
 def get_client() -> QdrantClient:
     global _client
     if _client is None:
-        _client = QdrantClient(host=settings.qdrant_host, port=settings.qdrant_port)
+        _client = QdrantClient(host=settings.qdrant_host, port=settings.qdrant_port, timeout=30)
         logger.info("Qdrant 연결: %s:%d", settings.qdrant_host, settings.qdrant_port)
     return _client
 
@@ -87,6 +87,26 @@ def upsert_page(
     return point_id
 
 
+def delete_document_pages(file_name: str) -> int:
+    """특정 문서의 모든 포인트를 삭제 (재인제스트 전 중복 방지)."""
+    client = get_client()
+    result = client.delete(
+        collection_name=settings.collection_name,
+        points_selector=models.FilterSelector(
+            filter=models.Filter(
+                must=[
+                    models.FieldCondition(
+                        key="file_name",
+                        match=models.MatchValue(value=file_name),
+                    ),
+                ]
+            )
+        ),
+    )
+    logger.info("기존 문서 삭제: %s (status=%s)", file_name, result.status)
+    return 0
+
+
 def search_pages(
     text_query_vector: list[float],
     image_query_vectors: list[list[float]],
@@ -113,7 +133,10 @@ def search_pages(
         )
     query_filter = models.Filter(must=must_conditions) if must_conditions else None
 
-    prefetch_limit = max(limit * 2, 20)
+    # 텍스트 전용 문서(Excel 등)는 image prefetch에 나타나지 않으므로
+    # text prefetch 한도를 높여 RRF 퓨전에서 불리함을 보정
+    text_prefetch_limit = max(limit * 3, 30)
+    image_prefetch_limit = max(limit * 2, 20)
 
     results = client.query_points(
         collection_name=settings.collection_name,
@@ -121,13 +144,13 @@ def search_pages(
             models.Prefetch(
                 query=text_query_vector,
                 using="text_vector",
-                limit=prefetch_limit,
+                limit=text_prefetch_limit,
                 filter=query_filter,
             ),
             models.Prefetch(
                 query=image_query_vectors,
                 using="image_vector",
-                limit=prefetch_limit,
+                limit=image_prefetch_limit,
                 filter=query_filter,
             ),
         ],

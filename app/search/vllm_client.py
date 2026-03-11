@@ -2,6 +2,7 @@ import base64
 import io
 import logging
 
+import httpx
 from PIL import Image
 
 from app.config import settings
@@ -40,7 +41,10 @@ def rewrite_query(question: str, history: list[dict] | None = None) -> str:
     """
     from openai import OpenAI
 
-    client = OpenAI(base_url=settings.vllm_base_url, api_key="dummy")
+    client = OpenAI(
+        base_url=settings.vllm_base_url, api_key="dummy",
+        timeout=httpx.Timeout(30.0, connect=10.0),
+    )
 
     # 멀티턴 히스토리가 있으면 시스템 프롬프트에 맥락 해석 지시 추가
     if history:
@@ -108,7 +112,10 @@ def describe_image_for_search(image: Image.Image) -> str:
     """
     from openai import OpenAI
 
-    client = OpenAI(base_url=settings.vllm_base_url, api_key="dummy")
+    client = OpenAI(
+        base_url=settings.vllm_base_url, api_key="dummy",
+        timeout=httpx.Timeout(60.0, connect=10.0),
+    )
 
     img_b64 = _image_to_base64(image, quality=80)
 
@@ -238,7 +245,10 @@ def generate_answer(
     """
     from openai import OpenAI
 
-    client = OpenAI(base_url=settings.vllm_base_url, api_key="dummy")
+    client = OpenAI(
+        base_url=settings.vllm_base_url, api_key="dummy",
+        timeout=httpx.Timeout(120.0, connect=10.0),
+    )
     messages = _build_messages(question, page_images, ocr_texts, source_info, history)
 
     response = client.chat.completions.create(
@@ -279,7 +289,10 @@ def generate_answer_stream(
     """
     from openai import OpenAI
 
-    client = OpenAI(base_url=settings.vllm_base_url, api_key="dummy")
+    client = OpenAI(
+        base_url=settings.vllm_base_url, api_key="dummy",
+        timeout=httpx.Timeout(180.0, connect=10.0),
+    )
     messages = _build_messages(question, page_images, ocr_texts, source_info, history)
 
     stream = client.chat.completions.create(

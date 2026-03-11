@@ -4,6 +4,7 @@ import json
 import logging
 import re
 
+import httpx
 from PIL import Image
 
 from app.config import settings
@@ -31,7 +32,10 @@ def classify_document_vlm(
 
     from openai import OpenAI
 
-    client = OpenAI(base_url=settings.vllm_base_url, api_key="dummy")
+    client = OpenAI(
+        base_url=settings.vllm_base_url, api_key="dummy",
+        timeout=httpx.Timeout(30.0, connect=10.0),
+    )
 
     # 이미지를 base64로 변환 (분류용이므로 작게 리사이즈)
     img = page_image.copy()
@@ -45,6 +49,7 @@ def classify_document_vlm(
     img_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
 
     prompt = (
+        f"/no_think\n"
         f"다음 문서의 첫 페이지를 분석하여 메타데이터를 JSON으로 생성하세요.\n\n"
         f"파일명: {file_name}\n\n"
     )
@@ -82,6 +87,8 @@ def classify_document_vlm(
         )
 
         answer = response.choices[0].message.content.strip()
+        if "</think>" in answer:
+            answer = answer.split("</think>")[-1].strip()
         logger.info("VLM 분류 응답: %s", answer)
 
         # JSON 파싱 (코드블록 안에 있을 수 있음)

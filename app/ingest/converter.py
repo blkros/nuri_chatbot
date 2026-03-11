@@ -97,6 +97,24 @@ def convert_office_to_pdf(file_path: Path) -> Path:
 MIN_TEXT_LENGTH = 30  # 이 글자수 미만이면 OCR 폴백 실행
 
 
+def _align_images_texts(
+    images: list[Image.Image], texts: list[str],
+) -> tuple[list[Image.Image], list[str]]:
+    """이미지와 텍스트 리스트 길이가 다르면 짧은 쪽을 패딩."""
+    if len(images) == len(texts):
+        return images, texts
+    logger.warning(
+        "페이지 수 불일치: 이미지=%d, 텍스트=%d → 패딩 적용",
+        len(images), len(texts),
+    )
+    while len(texts) < len(images):
+        texts.append("")
+    # 텍스트가 더 많으면 (드묾) 이미지를 None-safe하게 자름
+    if len(texts) > len(images):
+        texts = texts[:len(images)]
+    return images, texts
+
+
 def _ocr_fallback_for_empty_pages(
     texts: list[str], images: list[Image.Image],
 ) -> list[str]:
@@ -150,12 +168,13 @@ def process_document(
         pdf_path = convert_hwp_to_pdf(file_path)
         images = pdf_to_page_images(pdf_path)
         texts = extract_texts_from_pdf(pdf_path)
+        images, texts = _align_images_texts(images, texts)
         texts = _ocr_fallback_for_empty_pages(texts, images)
         return images, pdf_path, texts, None
     elif suffix == ".pdf":
         images = pdf_to_page_images(file_path)
         texts = extract_texts_from_pdf(file_path)
-        # 스캔 PDF 폴백: 텍스트가 없는 페이지에 OCR 실행
+        images, texts = _align_images_texts(images, texts)
         texts = _ocr_fallback_for_empty_pages(texts, images)
         return images, None, texts, None
     elif suffix in (".docx", ".doc", ".hwpx", ".pptx", ".ppt",
@@ -163,10 +182,12 @@ def process_document(
         pdf_path = convert_office_to_pdf(file_path)
         images = pdf_to_page_images(pdf_path)
         texts = extract_texts_from_pdf(pdf_path)
+        images, texts = _align_images_texts(images, texts)
         texts = _ocr_fallback_for_empty_pages(texts, images)
         return images, pdf_path, texts, None
     elif suffix in (".png", ".jpg", ".jpeg", ".tiff", ".bmp", ".gif", ".webp"):
-        img = Image.open(file_path).convert("RGB")
+        with Image.open(file_path) as _img:
+            img = _img.convert("RGB")
         text = extract_text_from_image(img)
         return [img], None, [text], None
     else:

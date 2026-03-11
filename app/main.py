@@ -25,6 +25,7 @@ from app.search.vllm_client import (
     rewrite_query,
 )
 from app.vectordb.qdrant_client import (
+    delete_document_pages,
     ensure_collection,
     get_document_pages,
     search_pages,
@@ -90,13 +91,17 @@ async def ingest_document(
         )
 
     upload_dir = Path(settings.upload_dir)
-    file_path = upload_dir / file.filename
+    # 경로 순회 방지: 파일명에서 디렉토리 구분자 제거
+    safe_filename = Path(file.filename).name
+    if not safe_filename or safe_filename.startswith("."):
+        raise HTTPException(status_code=400, detail="잘못된 파일명입니다.")
+    file_path = upload_dir / safe_filename
     temp_pdf_path = None
 
     # 파일 저장
     with open(file_path, "wb") as f:
         f.write(contents)
-    logger.info("파일 업로드: %s (%d bytes)", file.filename, len(contents))
+    logger.info("파일 업로드: %s (%d bytes)", safe_filename, len(contents))
 
     try:
         # 1. 문서 → 페이지 이미지 + 텍스트 추출
@@ -107,13 +112,11 @@ async def ingest_document(
         classification = classify_document_vlm(
             page_image=page_images[0] if page_images else None,
             text_content=all_text,
-            file_name=file.filename,
+            file_name=safe_filename,
         )
         department = classification.get("department", "기타")
         doc_type = classification.get("doc_type", "기타")
         summary = classification.get("summary", "")
-        prefix = f"[{department}/{doc_type}] {file.filename} | "
-
         metadata = {
             "department": department,
             "doc_type": doc_type,
@@ -126,9 +129,12 @@ async def ingest_document(
             try:
                 description = describe_image_for_search(page_images[0])
                 page_texts = [f"[이미지 설명] {description}\n\n{t}" for t in page_texts]
-                logger.info("이미지 설명 추가 완료: %s", file.filename)
+                logger.info("이미지 설명 추가 완료: %s", safe_filename)
             except Exception as e:
                 logger.warning("이미지 설명 생성 실패 (OCR만 사용): %s", e)
+
+        # 기존 동일 파일의 벡터 삭제 (중복 방지)
+        delete_document_pages(safe_filename)
 
         point_ids = []
 
@@ -146,14 +152,14 @@ async def ingest_document(
 
             img_vectors_list = embed_images(page_images)
             text_vectors = embed_texts(
-                [prefix + t if t.strip() else prefix + file.filename for t in page_texts]
+                [t if t.strip() else safe_filename for t in page_texts]
             )
 
             for i, (img_vec, txt_vec, page_text, img_path) in enumerate(
                 zip(img_vectors_list, text_vectors, page_texts, image_paths)
             ):
                 pid = upsert_page(
-                    file_name=file.filename,
+                    file_name=safe_filename,
                     page_number=i + 1,
                     image_vectors=img_vec,
                     text_vector=txt_vec,
@@ -165,7 +171,7 @@ async def ingest_document(
         else:
             # ── 텍스트 전용 경로 (Excel 등) ──
             text_vectors = embed_texts(
-                [prefix + t if t.strip() else prefix + file.filename for t in page_texts]
+                [t if t.strip() else safe_filename for t in page_texts]
             )
 
             for i, (txt_vec, page_text) in enumerate(
@@ -177,7 +183,7 @@ async def ingest_document(
                     chunk_meta.update(chunk_metas[i])
 
                 pid = upsert_page(
-                    file_name=file.filename,
+                    file_name=safe_filename,
                     page_number=i + 1,
                     image_vectors=None,
                     text_vector=txt_vec,
@@ -189,7 +195,7 @@ async def ingest_document(
 
         return {
             "status": "success",
-            "file_name": file.filename,
+            "file_name": safe_filename,
             "pages": len(page_images) or len(page_texts),
             "department": department,
             "doc_type": doc_type,
@@ -198,7 +204,7 @@ async def ingest_document(
         }
 
     except Exception as e:
-        logger.exception("인제스트 실패: %s", file.filename)
+        logger.exception("인제스트 실패: %s", safe_filename)
         return JSONResponse(status_code=500, content={"status": "error", "detail": str(e)})
 
     finally:
@@ -255,8 +261,9 @@ def _expand_with_doc_concentration(
     results: list[dict],
     fused: list[tuple[int, float]],
     initial_k: int,
+    search_query: str,
 ) -> list[dict]:
-    """문서 집중도 기반 컨텍스트 확장.
+    """문서 집중도 기반 컨텍스트 확장 (확장 페이지도 리랭킹 적용).
 
     검색 결과를 doc_id(file_name)별로 집계하여:
     1) 집중도 높은 경우 (같은 문서가 결과의 50%+) → Qdrant scroll로 문서 전체 페이지 조회
@@ -283,7 +290,6 @@ def _expand_with_doc_concentration(
 
     # ── 집중도 높음 → 문서 전체 페이지 조회 (Qdrant scroll) ──
     if concentration >= settings.doc_concentration_threshold:
-        # 문서 전체 페이지를 가져와서 크기 판별 + neighbor 매칭
         all_pages = get_document_pages(anchor_file, limit=200)
         doc_is_small = len(all_pages) <= settings.max_doc_expansion_pages
 
@@ -292,36 +298,46 @@ def _expand_with_doc_concentration(
             if results[idx]["file_name"] != anchor_file
         ]
 
-        if doc_is_small:
-            # 문서가 작으면 전체 포함
-            logger.info(
-                "문서 확장 (whole-doc): %s → %d 페이지 전체",
-                anchor_file, len(all_pages),
-            )
-            return all_pages + other_results[:2]
-
-        # 문서가 크면 검색에 걸린 페이지 + 인접 페이지(±1)
+        # 검색에 이미 걸린 페이지 번호
         existing_pages = {results[idx]["page_number"] for idx in top_indices
                          if results[idx]["file_name"] == anchor_file}
-        expanded = []
-        for page in all_pages:
-            pn = page["page_number"]
-            if pn in existing_pages or any(abs(pn - ep) <= 1 for ep in existing_pages):
-                expanded.append(page)
 
-        # max_doc_expansion_pages로 cap
-        if len(expanded) > settings.max_doc_expansion_pages:
-            expanded = expanded[:settings.max_doc_expansion_pages]
+        if doc_is_small:
+            candidate_pages = all_pages
+        else:
+            # 문서가 크면 검색에 걸린 페이지 + 인접 페이지(±1)
+            candidate_pages = []
+            for page in all_pages:
+                pn = page["page_number"]
+                if pn in existing_pages or any(abs(pn - ep) <= 1 for ep in existing_pages):
+                    candidate_pages.append(page)
+
+        # 새로 추가된 페이지(검색에 없던 것)를 리랭커로 필터링
+        new_pages = [p for p in candidate_pages if p["page_number"] not in existing_pages]
+        kept_pages = [p for p in candidate_pages if p["page_number"] in existing_pages]
+
+        if new_pages:
+            new_texts = [p["ocr_text"] for p in new_pages]
+            ranked_new = rerank(search_query, new_texts, top_k=len(new_texts))
+            # 리랭크 점수 하한 필터 적용
+            for idx, score in ranked_new:
+                if score >= settings.rerank_score_min:
+                    kept_pages.append(new_pages[idx])
+
+        # max_doc_expansion_pages로 cap + 정렬
+        kept_pages.sort(key=lambda p: p["page_number"])
+        if len(kept_pages) > settings.max_doc_expansion_pages:
+            kept_pages = kept_pages[:settings.max_doc_expansion_pages]
 
         logger.info(
-            "문서 확장 (neighbor): %s → %d 페이지 (검색 히트: %s)",
-            anchor_file, len(expanded),
+            "문서 확장: %s → %d 페이지 (검색 히트: %s, 리랭크 통과: %d)",
+            anchor_file, len(kept_pages),
             sorted(existing_pages),
+            len(kept_pages) - len(existing_pages),
         )
-        return expanded + other_results[:2]
+        return kept_pages + other_results[:2]
 
     # ── 집중도 낮음 → 기존 방식: 검색 결과 내에서만 확장 ──
-    # 앵커 문서 페이지를 fused 순서에서 추가
     for idx, _ in fused[initial_k:]:
         if len(top_indices) >= settings.adaptive_max_k:
             break
@@ -470,7 +486,13 @@ def _prepare_rag_context(question: str, top_k: int = 0, history: list[dict] | No
     fused.sort(key=lambda x: x[1], reverse=True)
 
     # 6. 문서 집중도 기반 컨텍스트 확장
-    top_results = _expand_with_doc_concentration(results, fused, effective_k)
+    top_results = _expand_with_doc_concentration(results, fused, effective_k, search_query)
+
+    # VLM 컨텍스트 예산 제한 (max_model_len=8192 초과 방지)
+    MAX_CONTEXT_PAGES = 15
+    if len(top_results) > MAX_CONTEXT_PAGES:
+        logger.warning("컨텍스트 페이지 수 제한: %d → %d", len(top_results), MAX_CONTEXT_PAGES)
+        top_results = top_results[:MAX_CONTEXT_PAGES]
 
     # 이미지 전송: 텍스트 충분도 기반 결정 + 최대 이미지 수 제한
     page_images = []
@@ -490,7 +512,8 @@ def _prepare_rag_context(question: str, top_k: int = 0, history: list[dict] | No
             and Path(img_path).exists()
             and img_count < settings.max_context_images
         ):
-            page_images.append(Image.open(img_path).convert("RGB"))
+            with Image.open(img_path) as _img:
+                page_images.append(_img.convert("RGB"))
             img_count += 1
         else:
             page_images.append(None)

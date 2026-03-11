@@ -48,14 +48,20 @@ def rewrite_query(question: str) -> str:
                 "role": "system",
                 "content": (
                     "/no_think\n"
-                    "사내 문서 검색 쿼리 확장기. 질문의 핵심 단어에 동의어/유의어만 추가하세요.\n\n"
-                    "규칙:\n"
-                    "- 질문에 있는 단어의 동의어/유의어/공식 용어만 추가\n"
-                    "- 질문에 없는 새로운 내용을 지어내지 마세요 (환각 금지)\n"
-                    "- 구어체를 공식 용어로 보완 (예: '결재 어떻게해' → '결재 승인 절차 전결 위임전결')\n"
-                    "- 1줄, 50자 이내. 확장 쿼리만 출력."
+                    "사내 문서 검색 쿼리 확장기.\n"
+                    "질문을 검색에 유리하게 다듬되, 질문에 없는 내용을 절대 추가하지 마세요.\n"
+                    "동의어/유의어/공식 용어 추가만 허용. 1줄, 50자 이내."
                 ),
             },
+            # few-shot 예시
+            {"role": "user", "content": "결재 어떻게해?"},
+            {"role": "assistant", "content": "결재 승인 절차 전결 위임전결 규정"},
+            {"role": "user", "content": "급식 메뉴 알려줘"},
+            {"role": "assistant", "content": "급식 메뉴 식단표 중식 석식"},
+            {"role": "user", "content": "회의 결론이 뭐야?"},
+            {"role": "assistant", "content": "회의 결론 결과 요약 의결사항"},
+            {"role": "user", "content": "pulsar 챗봇 기능별로 정리해줘"},
+            {"role": "assistant", "content": "Pulsar 챗봇 기능 목록 설명 정리"},
             {"role": "user", "content": question},
         ],
         max_tokens=80,

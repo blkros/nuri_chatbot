@@ -190,10 +190,12 @@ function addUserMessage(text, save = true) {
   if (save) appendMessage("user", text);
 }
 
+const AI_AVATAR = '<div class="ai-avatar">N</div>';
+
 function addAIMessage(html, save = true) {
   const div = document.createElement("div");
   div.className = "msg msg-ai";
-  div.innerHTML = `<div class="bubble-wrap"><div class="bubble">${html}</div></div>`;
+  div.innerHTML = `${AI_AVATAR}<div class="bubble-wrap"><div class="bubble">${html}</div></div>`;
   chatMessages.appendChild(div);
   scrollToBottom();
 }
@@ -202,7 +204,7 @@ function addStreamingAIMessage() {
   const div = document.createElement("div");
   div.className = "msg msg-ai";
   div.id = "streaming-msg";
-  div.innerHTML = `<div class="bubble-wrap"><div class="bubble" id="streaming-bubble"><span class="streaming-cursor"></span></div></div>`;
+  div.innerHTML = `<div class="ai-avatar thinking" id="streaming-avatar">N</div><div class="bubble-wrap"><div class="bubble" id="streaming-bubble"></div></div>`;
   chatMessages.appendChild(div);
   scrollToBottom();
   return document.getElementById("streaming-bubble");
@@ -211,10 +213,14 @@ function addStreamingAIMessage() {
 function finalizeStreamingMessage(fullText) {
   const bubble = document.getElementById("streaming-bubble");
   if (!bubble) return;
-  const cursor = bubble.querySelector(".streaming-cursor");
-  if (cursor) cursor.remove();
   bubble.innerHTML = formatAnswer(fullText);
   bubble.removeAttribute("id");
+  // 아바타 펄스 중지
+  const avatar = document.getElementById("streaming-avatar");
+  if (avatar) {
+    avatar.classList.remove("thinking");
+    avatar.removeAttribute("id");
+  }
   const msg = document.getElementById("streaming-msg");
   if (msg) msg.removeAttribute("id");
   scrollToBottom();
@@ -228,7 +234,7 @@ function addLoadingIndicator() {
   const div = document.createElement("div");
   div.className = "msg msg-loading";
   div.id = "loading-msg";
-  div.innerHTML = `<div class="bubble"><div class="typing-dots"><span></span><span></span><span></span></div><span>답변을 생성하고 있습니다...</span></div>`;
+  div.innerHTML = `<div class="ai-avatar thinking">N</div><div class="bubble"><div class="typing-dots"><span></span><span></span><span></span></div><span>답변을 생성하고 있습니다...</span></div>`;
   chatMessages.appendChild(div);
   scrollToBottom();
 }

@@ -450,11 +450,38 @@ body {
 .msg-ai {
   display: flex;
   justify-content: flex-start;
+  align-items: flex-start;
+  gap: 10px;
   margin-bottom: 24px;
 }
 
+.ai-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #5b9bf0 0%, #3a6fd8 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 2px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: -0.5px;
+}
+
+.ai-avatar.thinking {
+  animation: avatar-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes avatar-pulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(91, 155, 240, 0.4); }
+  50% { transform: scale(1.1); box-shadow: 0 0 12px 4px rgba(91, 155, 240, 0.25); }
+}
+
 .msg-ai .bubble-wrap {
-  max-width: 90%;
+  max-width: 88%;
 }
 
 .msg-ai .bubble {
@@ -471,33 +498,12 @@ body {
   color: #5b9bf0;
 }
 
-/* ── 출처 태그 (버블 아래) ── */
-.msg-sources {
-  margin-top: 10px;
-  padding-left: 4px;
-}
-
-.msg-sources-label {
-  color: #5a6a7a;
-  font-size: 0.75rem;
-  margin-bottom: 6px;
-}
-
-.source-tag {
-  display: inline-block;
-  background: #0f1923;
-  border: 1px solid #2a3a4a;
-  border-radius: 6px;
-  padding: 3px 10px;
-  margin: 3px 3px 3px 0;
-  font-size: 0.78rem;
-  color: #6a9ad0;
-}
-
 /* ── 로딩 (AI 타이핑 인디케이터) ── */
 .msg-loading {
   display: flex;
   justify-content: flex-start;
+  align-items: flex-start;
+  gap: 10px;
   margin-bottom: 24px;
 }
 
@@ -535,21 +541,7 @@ body {
   40% { transform: scale(1); opacity: 1; }
 }
 
-/* ── 스트리밍 커서 ── */
-.streaming-cursor {
-  display: inline-block;
-  width: 2px;
-  height: 1.1em;
-  background: #7eb8da;
-  margin-left: 2px;
-  vertical-align: text-bottom;
-  animation: blink 0.8s step-end infinite;
-}
-
-@keyframes blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
-}
+/* ── 스트리밍 커서 (삭제 — 아바타 펄스로 대체) ── */
 
 /* ── 하단 입력창 ── */
 .bottom-bar {

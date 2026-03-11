@@ -107,7 +107,7 @@ function loadConversation(id) {
     if (msg.role === "user") {
       addUserMessage(msg.content, false);
     } else {
-      addAIMessage(formatAnswer(msg.content), null, false);
+      addAIMessage(formatAnswer(msg.content), false);
     }
   });
 
@@ -209,13 +209,10 @@ function addUserMessage(text, save = true) {
 
 const AI_AVATAR = '<div class="ai-avatar">N</div>';
 
-function addAIMessage(html, sourcesHtml = null, save = true) {
+function addAIMessage(html, save = true) {
   const div = document.createElement("div");
   div.className = "msg msg-ai";
   let inner = `${AI_AVATAR}<div class="bubble-wrap"><div class="bubble">${html}</div>`;
-  if (sourcesHtml) {
-    inner += sourcesHtml;
-  }
   inner += `<button class="copy-btn" title="복사">복사</button>`;
   inner += `</div>`;
   div.innerHTML = inner;
@@ -241,18 +238,15 @@ function addStreamingAIMessage() {
   return document.getElementById("streaming-bubble");
 }
 
-function finalizeStreamingMessage(fullText, sourcesHtml) {
+function finalizeStreamingMessage(fullText) {
   const bubble = document.getElementById("streaming-bubble");
   if (!bubble) return;
   bubble.innerHTML = formatAnswer(fullText);
   bubble.removeAttribute("id");
 
-  // 출처 + 복사 버튼 추가
+  // 복사 버튼 추가
   const wrap = bubble.closest(".bubble-wrap");
   if (wrap) {
-    if (sourcesHtml) {
-      wrap.insertAdjacentHTML("beforeend", sourcesHtml);
-    }
     const copyBtn = document.createElement("button");
     copyBtn.className = "copy-btn";
     copyBtn.title = "복사";
@@ -279,43 +273,6 @@ function finalizeStreamingMessage(fullText, sourcesHtml) {
   // 대화 이력에 저장
   appendMessage("ai", fullText);
   renderHistoryList();
-}
-
-// ── 출처 정보를 사람이 읽기 좋은 형태로 변환 ──
-
-function buildSourcesHtml(sources) {
-  if (!sources || sources.length === 0) return "";
-
-  // 파일별 페이지 그룹핑
-  const filePages = {};
-  sources.forEach(s => {
-    const name = s.file_name || "";
-    if (!name) return;
-    if (!filePages[name]) filePages[name] = [];
-    filePages[name].push(s.page_number || 0);
-  });
-
-  const chips = [];
-  for (const [name, pages] of Object.entries(filePages)) {
-    pages.sort((a, b) => a - b);
-    // 페이지 범위 압축: [1,2,3,5] → "1-3, 5p"
-    const ranges = [];
-    let start = pages[0], end = pages[0];
-    for (let i = 1; i < pages.length; i++) {
-      if (pages[i] === end + 1) {
-        end = pages[i];
-      } else {
-        ranges.push(start === end ? `${start}` : `${start}-${end}`);
-        start = end = pages[i];
-      }
-    }
-    ranges.push(start === end ? `${start}` : `${start}-${end}`);
-
-    const pageLabel = pages.length === 1 && pages[0] <= 1 ? "" : ` (${ranges.join(", ")}p)`;
-    chips.push(`<span class="source-chip">${escapeHtml(name)}${pageLabel}</span>`);
-  }
-
-  return `<div class="sources-bar"><span class="sources-label">참고 문서</span>${chips.join("")}</div>`;
 }
 
 function addLoadingIndicator(text = "문서를 검색하고 있습니다...") {
@@ -491,7 +448,6 @@ async function doSearch(question) {
       }
     }
 
-    let sourcesHtml = "";
     let fullText = "";
     let streamStarted = false;
 
@@ -530,7 +486,6 @@ async function doSearch(question) {
 
             if (msg.sources) {
               // 출처 정보 수신 → 로딩 텍스트 업데이트
-              sourcesHtml = buildSourcesHtml(msg.sources);
               updateLoadingText("답변을 생성하고 있습니다...");
             } else if (msg.token) {
               // 첫 토큰 → 로딩 제거 + 스트리밍 버블 생성
@@ -584,13 +539,13 @@ async function doSearch(question) {
         fullText = fullText || "답변을 생성할 수 없습니다.";
       }
 
-      finalizeStreamingMessage(fullText, sourcesHtml);
+      finalizeStreamingMessage(fullText);
     } catch (streamErr) {
       removeLoadingIndicator();
       if (!streamStarted) {
         addAIMessage(formatAnswer(fullText || "서버 연결에 실패했습니다."));
       } else {
-        finalizeStreamingMessage(fullText || "서버 연결에 실패했습니다.", sourcesHtml);
+        finalizeStreamingMessage(fullText || "서버 연결에 실패했습니다.");
       }
     }
   } catch (err) {

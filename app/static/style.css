@@ -539,34 +539,6 @@ body {
   font-size: 1.05em;
 }
 
-/* ── 출처 표시 바 ── */
-.sources-bar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 12px;
-  padding-top: 10px;
-  border-top: 1px solid #2a3a4a;
-}
-
-.source-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
-  background: rgba(91, 155, 240, 0.1);
-  border: 1px solid rgba(91, 155, 240, 0.25);
-  border-radius: 12px;
-  font-size: 0.78rem;
-  color: #7eb8f0;
-  white-space: nowrap;
-}
-
-.source-chip::before {
-  content: "📄";
-  font-size: 0.7rem;
-}
-
 /* ── 복사 버튼 ── */
 .copy-btn {
   display: inline-flex;
@@ -591,14 +563,6 @@ body {
 .copy-btn.copied {
   border-color: #4aca8a;
   color: #4aca8a;
-}
-
-/* ── 출처 라벨 ── */
-.sources-label {
-  font-size: 0.75rem;
-  color: #5a6a7a;
-  align-self: center;
-  margin-right: 4px;
 }
 
 /* ── 코드 블록 ── */

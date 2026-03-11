@@ -30,6 +30,49 @@ def _image_to_base64(image: Image.Image, quality: int = 85) -> str:
     return base64.b64encode(buf.getvalue()).decode("utf-8")
 
 
+def rewrite_query(question: str) -> str:
+    """사용자 질문을 검색에 유리한 형태로 확장.
+
+    짧거나 모호한 질문에 관련 키워드를 추가하여
+    임베딩 검색과 리랭킹 품질을 높인다.
+    텍스트 전용 호출이라 빠름 (~0.5초).
+    """
+    from openai import OpenAI
+
+    client = OpenAI(base_url=settings.vllm_base_url, api_key="dummy")
+
+    response = client.chat.completions.create(
+        model=settings.vllm_model,
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "/no_think\n"
+                    "사내 문서 검색 시스템의 쿼리 확장기입니다.\n"
+                    "사용자 질문을 문서 검색에 최적화된 형태로 변환하세요.\n\n"
+                    "규칙:\n"
+                    "- 원래 질문의 의미를 유지하면서 관련 키워드를 추가\n"
+                    "- 구어체/줄임말을 공식 용어로 보완 (예: '결재' → '결재 승인 전결 위임전결')\n"
+                    "- 1줄로 출력, 50자 이내\n"
+                    "- 확장된 검색 쿼리만 출력하세요. 다른 텍스트 없이."
+                ),
+            },
+            {"role": "user", "content": question},
+        ],
+        max_tokens=80,
+        temperature=0.1,
+    )
+
+    rewritten = response.choices[0].message.content.strip()
+    if "</think>" in rewritten:
+        rewritten = rewritten.split("</think>")[-1].strip()
+    # 빈 응답이나 비정상적으로 긴 경우 원본 사용
+    if not rewritten or len(rewritten) > 200:
+        return question
+    logger.info("쿼리 리라이팅: '%s' → '%s'", question, rewritten)
+    return rewritten
+
+
 def describe_image_for_search(image: Image.Image) -> str:
     """이미지 파일 인제스트 시 VLM으로 검색용 설명 생성.
 

@@ -17,7 +17,7 @@ from app.ingest.embedder import (
     embed_texts,
 )
 from app.search.reranker import rerank
-from app.search.vllm_client import describe_image_for_search, generate_answer
+from app.search.vllm_client import describe_image_for_search, generate_answer, rewrite_query
 from app.vectordb.qdrant_client import ensure_collection, search_pages, upsert_page
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -348,11 +348,18 @@ def ask_question(
     question: str = Form(...),
     top_k: int = Form(0),  # 0 = adaptive (리랭커 점수 기반 자동 결정)
 ):
-    """질문 → 검색 → 리랭킹 → VLM 답변 생성 (전체 RAG 파이프라인)."""
+    """질문 → 쿼리 리라이팅 → 검색 → 리랭킹 → VLM 답변 생성 (전체 RAG 파이프라인)."""
     try:
-        # 1. 쿼리 임베딩
-        text_vector = embed_query_text(question)
-        image_vectors = embed_query_for_images(question)
+        # 0. 쿼리 리라이팅 (짧거나 모호한 질문을 검색에 유리하게 확장)
+        try:
+            search_query = rewrite_query(question)
+        except Exception as e:
+            logger.warning("쿼리 리라이팅 실패 (원본 사용): %s", e)
+            search_query = question
+
+        # 1. 쿼리 임베딩 (리라이팅된 쿼리로 검색)
+        text_vector = embed_query_text(search_query)
+        image_vectors = embed_query_for_images(search_query)
 
         # 2. Qdrant 하이브리드 검색 (넓은 풀에서 후보 확보)
         results = search_pages(
@@ -367,9 +374,9 @@ def ask_question(
                 "sources": [],
             }
 
-        # 3. 리랭킹 (전체 결과 대상)
+        # 3. 리랭킹 (리라이팅된 쿼리로 매칭)
         ocr_texts = [r["ocr_text"] for r in results]
-        ranked = rerank(question, ocr_texts, top_k=len(results))
+        ranked = rerank(search_query, ocr_texts, top_k=len(results))
 
         # 4. Adaptive top_k 결정 (리랭커 점수 분포 기반)
         if top_k <= 0:

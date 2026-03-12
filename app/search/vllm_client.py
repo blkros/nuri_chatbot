@@ -61,28 +61,38 @@ def rewrite_query(question: str, history: list[dict] | None = None) -> str:
     if history:
         system_content = (
             "/no_think\n"
-            "사내 문서 검색 쿼리 확장기.\n"
+            "사내 문서 검색 쿼리 확장기. 한국어만 사용.\n"
             "이전 대화 맥락이 주어집니다. 현재 질문이 후속 질문이면 "
-            "이전 맥락을 반영하여 자기 완결적인 검색 쿼리로 변환하세요.\n"
-            "예: 이전='위임전결 규정 알려줘', 현재='표로 정리해줘' → '위임전결 규정 표 정리'\n"
-            "질문에 없는 내용을 추가하지 마세요. 1줄, 50자 이내."
+            "이전 맥락을 반영하여 자기 완결적인 검색 쿼리로 변환하세요.\n\n"
+            "## 규칙\n"
+            "- 원본 질문의 핵심 키워드를 유지하고 동의어만 추가\n"
+            "- 질문에 없는 구체적 내용(항목명, 구조, 설명)을 절대 추가하지 마세요\n"
+            "- 답변하지 마세요. 검색 키워드만 출력하세요\n"
+            "- 1줄, 30자 이내\n"
         )
     else:
         system_content = (
             "/no_think\n"
-            "사내 문서 검색 쿼리 확장기.\n"
-            "질문을 검색에 유리하게 다듬되, 질문에 없는 내용을 절대 추가하지 마세요.\n"
-            "동의어/유의어/공식 용어 추가만 허용. 1줄, 50자 이내."
+            "사내 문서 검색 쿼리 확장기. 한국어만 사용.\n\n"
+            "## 규칙\n"
+            "- 원본 질문의 핵심 키워드를 유지하고 동의어/유의어만 추가\n"
+            "- 질문에 없는 구체적 내용(항목명, 구조, 설명)을 절대 추가하지 마세요\n"
+            "- 답변하지 마세요. 검색 키워드만 출력하세요\n"
+            "- 1줄, 30자 이내\n"
         )
 
     messages = [{"role": "system", "content": system_content}]
 
-    # few-shot 예시
+    # few-shot 예시 (좋은 예 + 나쁜 예)
     messages.extend([
         {"role": "user", "content": "결재 어떻게해?"},
-        {"role": "assistant", "content": "결재 승인 절차 전결 위임전결 규정"},
+        {"role": "assistant", "content": "결재 승인 절차 위임전결"},
         {"role": "user", "content": "급식 메뉴 알려줘"},
-        {"role": "assistant", "content": "급식 메뉴 식단표 중식 석식"},
+        {"role": "assistant", "content": "급식 메뉴 식단표"},
+        {"role": "user", "content": "회의록 내용 요약해줘"},
+        {"role": "assistant", "content": "회의록 요약 회의 내용"},
+        {"role": "user", "content": "파이썬 문법 알려줘"},
+        {"role": "assistant", "content": "파이썬 문법"},
     ])
 
     # 멀티턴 히스토리가 있으면 이전 대화 추가 (최근 2턴)

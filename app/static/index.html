@@ -4,18 +4,25 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Nuri Chatbot</title>
-  <link rel="stylesheet" href="/static/style.css?v=8">
+  <link rel="stylesheet" href="/static/style.css?v=10">
 </head>
 <body>
   <div id="app">
-    <!-- 초기 화면: Google 스타일 중앙 검색 -->
+    <!-- 초기 화면: 중앙 검색 -->
     <div id="landing" class="landing">
-      <h1 class="logo">Nuri Chatbot</h1>
-      <p class="subtitle">사내 문서 기반 AI 어시스턴트</p>
+      <div class="landing-icon">
+        <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+          <circle cx="24" cy="24" r="22" stroke="url(#grad)" stroke-width="2" fill="none"/>
+          <text x="24" y="30" text-anchor="middle" fill="url(#grad)" font-size="22" font-weight="700" font-family="-apple-system,sans-serif">N</text>
+          <defs><linearGradient id="grad" x1="0" y1="0" x2="48" y2="48"><stop offset="0%" stop-color="#5b9bf0"/><stop offset="100%" stop-color="#7c5bf0"/></linearGradient></defs>
+        </svg>
+      </div>
+      <h1 class="logo">Nuri</h1>
+      <p class="subtitle">사내 문서 AI 어시스턴트</p>
       <div class="search-box">
         <button id="attach-btn" class="attach-btn" title="파일 첨부">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+            <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
           </svg>
         </button>
         <input type="text" id="query-input" placeholder="무엇이든 물어보세요..." autocomplete="off">
@@ -26,8 +33,15 @@
         </button>
       </div>
       <div id="file-badge" class="file-badge hidden">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
         <span id="file-name"></span>
         <button id="file-remove" class="file-remove" title="제거">&times;</button>
+      </div>
+      <!-- 예시 질문 -->
+      <div class="suggestions">
+        <button class="suggestion-chip" data-q="위임전결 규정에서 R&D 관련 항목 알려줘">위임전결 규정 조회</button>
+        <button class="suggestion-chip" data-q="급식 메뉴 알려줘">급식 메뉴 확인</button>
+        <button class="suggestion-chip" data-q="회의록 내용 요약해줘">회의록 요약</button>
       </div>
     </div>
 
@@ -58,7 +72,7 @@
               <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
             </svg>
           </button>
-          <span class="top-logo" onclick="resetUI()">Nuri Chatbot</span>
+          <span class="top-logo" onclick="resetUI()">Nuri</span>
         </div>
 
         <!-- 대화 메시지 영역 -->
@@ -69,7 +83,7 @@
           <div class="bottom-input-box">
             <button id="bottom-attach-btn" class="attach-btn attach-btn-sm" title="파일 첨부">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
               </svg>
             </button>
             <input type="text" id="bottom-query-input" placeholder="후속 질문을 입력하세요..." autocomplete="off">
@@ -80,6 +94,7 @@
             </button>
           </div>
           <div id="bottom-file-badge" class="file-badge file-badge-bottom hidden">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
             <span id="bottom-file-name"></span>
             <button id="bottom-file-remove" class="file-remove" title="제거">&times;</button>
           </div>
@@ -90,6 +105,6 @@
 
   <input type="file" id="file-input" hidden accept=".pdf,.hwp,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.gif,.bmp,.tiff,.csv">
   <div id="toast-container" class="toast-container"></div>
-  <script src="/static/script.js?v=8"></script>
+  <script src="/static/script.js?v=10"></script>
 </body>
 </html>

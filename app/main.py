@@ -390,6 +390,7 @@ def _expand_with_doc_concentration(
     fused: list[tuple[int, float]],
     initial_k: int,
     search_query: str,
+    rerank_scores: dict[int, float] | None = None,
 ) -> list[dict]:
     """문서 집중도 기반 컨텍스트 확장 (확장 페이지도 리랭킹 적용).
 
@@ -416,8 +417,19 @@ def _expand_with_doc_concentration(
         anchor_file, anchor_count, total, concentration * 100,
     )
 
-    # ── 집중도 높음 → 문서 전체 페이지 조회 (Qdrant scroll) ──
-    if concentration >= settings.doc_concentration_threshold:
+    # anchor 문서의 최고 rerank score 확인 — 낮으면 확장 스킵
+    # (무관한 문서가 여러 페이지 검색된 것일 뿐, 진짜 집중이 아님)
+    if rerank_scores:
+        anchor_best_score = max(
+            (rerank_scores.get(idx, 0.0) for idx in top_indices
+             if results[idx]["file_name"] == anchor_file),
+            default=0.0,
+        )
+    else:
+        anchor_best_score = 1.0  # rerank_scores 없으면 확장 허용
+
+    # ── 집중도 높음 + anchor 문서가 실제로 관련 있음 → 문서 확장 ──
+    if concentration >= settings.doc_concentration_threshold and anchor_best_score >= settings.rerank_score_min:
         all_pages = get_document_pages(anchor_file, limit=200)
         doc_is_small = len(all_pages) <= settings.max_doc_expansion_pages
 
@@ -617,7 +629,7 @@ def _prepare_rag_context(question: str, top_k: int = 0, history: list[dict] | No
     fused.sort(key=lambda x: x[1], reverse=True)
 
     # 6. 문서 집중도 기반 컨텍스트 확장
-    top_results = _expand_with_doc_concentration(results, fused, effective_k, search_query)
+    top_results = _expand_with_doc_concentration(results, fused, effective_k, search_query, rerank_scores)
 
     # VLM 컨텍스트 예산 제한 (max_model_len=8192 초과 방지)
     if len(top_results) > settings.max_context_pages:

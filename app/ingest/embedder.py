@@ -1,4 +1,5 @@
 import logging
+import threading
 
 import torch
 from PIL import Image
@@ -10,6 +11,8 @@ logger = logging.getLogger(__name__)
 # Lazy-loaded model singletons
 _nemotron_model = None
 _bge_model = None
+_nemotron_lock = threading.Lock()
+_bge_lock = threading.Lock()
 
 # Qdrant multivector 제한: 1,048,576 floats / 2560 dim = 409 tokens
 MAX_TOKENS_PER_IMAGE = 400
@@ -19,7 +22,11 @@ EMBED_MAX_IMAGE_SIZE = 1280
 def get_nemotron_model():
     """Nemotron ColEmbed V2 4B 모델 로드 (CPU, ColBERT multi-vector)."""
     global _nemotron_model
-    if _nemotron_model is None:
+    if _nemotron_model is not None:
+        return _nemotron_model
+    with _nemotron_lock:
+        if _nemotron_model is not None:
+            return _nemotron_model
         from transformers import AutoModel
 
         model_path = settings.nemotron_model_path
@@ -42,7 +49,11 @@ def get_nemotron_model():
 def get_bge_model():
     """BGE-m3-ko 텍스트 임베딩 모델 로드 (CPU, 1024차원)."""
     global _bge_model
-    if _bge_model is None:
+    if _bge_model is not None:
+        return _bge_model
+    with _bge_lock:
+        if _bge_model is not None:
+            return _bge_model
         from sentence_transformers import SentenceTransformer
 
         model_path = settings.bge_m3_ko_model_path

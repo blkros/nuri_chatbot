@@ -4,7 +4,6 @@ import json
 import logging
 import re
 
-import httpx
 from PIL import Image
 
 from app.config import settings
@@ -30,12 +29,9 @@ def classify_document_vlm(
         dept = _classify_by_keywords(file_name, text_content)
         return {"department": dept, "doc_type": "기타", "summary": ""}
 
-    from openai import OpenAI
+    from app.search.vllm_client import _get_vllm_client
 
-    client = OpenAI(
-        base_url=settings.vllm_base_url, api_key="dummy",
-        timeout=httpx.Timeout(30.0, connect=10.0),
-    )
+    client = _get_vllm_client(timeout=30.0)
 
     # 이미지를 base64로 변환 (분류용이므로 작게 리사이즈)
     img = page_image.copy()
@@ -86,6 +82,8 @@ def classify_document_vlm(
             temperature=0.1,
         )
 
+        if not response.choices or not response.choices[0].message.content:
+            raise ValueError("VLM 빈 응답")
         answer = response.choices[0].message.content.strip()
         if "</think>" in answer:
             answer = answer.split("</think>")[-1].strip()

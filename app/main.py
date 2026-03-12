@@ -207,6 +207,8 @@ async def ingest_document(
                 content={"status": "error", "detail": "문서에서 텍스트를 추출할 수 없습니다."},
             )
 
+        # 컬렉션 보장 (삭제 후 재인제스트 시 필요)
+        ensure_collection()
         # 기존 동일 파일의 벡터 삭제 (중복 방지)
         delete_document_pages(safe_filename)
 

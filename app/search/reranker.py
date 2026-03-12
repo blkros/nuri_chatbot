@@ -1,4 +1,5 @@
 import logging
+import threading
 
 import torch
 
@@ -8,12 +9,17 @@ logger = logging.getLogger(__name__)
 
 _reranker_model = None
 _reranker_tokenizer = None
+_reranker_lock = threading.Lock()
 
 
 def get_reranker():
     """bge-reranker-v2-m3 모델 + 토크나이저 로드 (CPU)."""
     global _reranker_model, _reranker_tokenizer
-    if _reranker_model is None:
+    if _reranker_model is not None:
+        return _reranker_model, _reranker_tokenizer
+    with _reranker_lock:
+        if _reranker_model is not None:
+            return _reranker_model, _reranker_tokenizer
         from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
         model_path = settings.reranker_model_path

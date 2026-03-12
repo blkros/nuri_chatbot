@@ -31,14 +31,20 @@ def _image_to_base64(image: Image.Image, quality: int = 85) -> str:
     return base64.b64encode(buf.getvalue()).decode("utf-8")
 
 
-def _get_vllm_client(timeout: float = 30.0) -> "OpenAI":
-    """vLLM OpenAI 클라이언트 생성 (공용 헬퍼)."""
-    from openai import OpenAI
+_vllm_client = None
 
-    return OpenAI(
-        base_url=settings.vllm_base_url, api_key="dummy",
-        timeout=httpx.Timeout(timeout, connect=10.0),
-    )
+
+def _get_vllm_client(timeout: float = 30.0) -> "OpenAI":
+    """vLLM OpenAI 클라이언트 반환 (싱글턴, 커넥션 재사용)."""
+    global _vllm_client
+    if _vllm_client is None:
+        from openai import OpenAI
+
+        _vllm_client = OpenAI(
+            base_url=settings.vllm_base_url, api_key="dummy",
+            timeout=httpx.Timeout(timeout, connect=10.0),
+        )
+    return _vllm_client
 
 
 def rewrite_query(question: str, history: list[dict] | None = None) -> str:
@@ -99,6 +105,8 @@ def rewrite_query(question: str, history: list[dict] | None = None) -> str:
         temperature=0.1,
     )
 
+    if not response.choices or not response.choices[0].message.content:
+        return question
     rewritten = response.choices[0].message.content.strip()
     if "</think>" in rewritten:
         rewritten = rewritten.split("</think>")[-1].strip()
@@ -147,6 +155,8 @@ def describe_image_for_search(image: Image.Image) -> str:
         temperature=0.1,
     )
 
+    if not response.choices or not response.choices[0].message.content:
+        return ""
     answer = response.choices[0].message.content.strip()
     if "</think>" in answer:
         answer = answer.split("</think>")[-1].strip()
@@ -260,11 +270,14 @@ def generate_answer(
         temperature=0.2,
     )
 
-    answer = response.choices[0].message.content
+    if not response.choices or not response.choices[0].message.content:
+        answer = "죄송합니다. 답변을 생성하지 못했습니다. 다시 시도해 주세요."
+    else:
+        answer = response.choices[0].message.content
     # thinking 토큰이 포함된 경우 제거
-    if answer and "</think>" in answer:
+    if "</think>" in answer:
         answer = answer.split("</think>")[-1].strip()
-    logger.info("VLM 답변 생성 완료 (%d 토큰)", response.usage.completion_tokens)
+    logger.info("VLM 답변 생성 완료 (%d 토큰)", response.usage.completion_tokens if response.usage else 0)
 
     return {
         "answer": answer,

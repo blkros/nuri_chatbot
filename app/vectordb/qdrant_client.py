@@ -117,20 +117,26 @@ def upsert_page(
 def delete_document_pages(file_name: str) -> int:
     """특정 문서의 모든 포인트를 삭제 (재인제스트 전 중복 방지)."""
     client = get_client()
-    result = client.delete(
-        collection_name=settings.collection_name,
-        points_selector=models.FilterSelector(
-            filter=models.Filter(
-                must=[
-                    models.FieldCondition(
-                        key="file_name",
-                        match=models.MatchValue(value=file_name),
-                    ),
-                ]
-            )
-        ),
-    )
-    logger.info("기존 문서 삭제: %s (status=%s)", file_name, result.status)
+    try:
+        result = client.delete(
+            collection_name=settings.collection_name,
+            points_selector=models.FilterSelector(
+                filter=models.Filter(
+                    must=[
+                        models.FieldCondition(
+                            key="file_name",
+                            match=models.MatchValue(value=file_name),
+                        ),
+                    ]
+                )
+            ),
+        )
+        logger.info("기존 문서 삭제: %s (status=%s)", file_name, result.status)
+    except Exception as e:
+        if "doesn't exist" in str(e):
+            logger.info("컬렉션 미존재, 삭제 스킵: %s", file_name)
+        else:
+            raise
     return 0
 
 

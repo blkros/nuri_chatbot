@@ -639,6 +639,36 @@ def _prepare_rag_context(question: str, top_k: int = 0, history: list[dict] | No
     # 6. 문서 집중도 기반 컨텍스트 확장
     top_results = _expand_with_doc_concentration(results, fused, effective_k, search_query, rerank_scores)
 
+    # 6.5 노이즈 필터: rerank 점수가 최고 점수 대비 매우 낮은 결과 제거
+    # (VLM 컨텍스트에 무관한 문서가 섞이면 답변 품질 저하)
+    if rerank_scores and len(top_results) > 1:
+        # top_results의 rerank 점수 매핑
+        result_scores = []
+        for r in top_results:
+            key = (r["file_name"], r["page_number"])
+            # fused 인덱스에서 rerank_score 찾기
+            rs = max(
+                (rerank_scores.get(idx, 0.0) for idx in range(len(results))
+                 if results[idx]["file_name"] == r["file_name"]
+                 and results[idx]["page_number"] == r["page_number"]),
+                default=0.0,
+            )
+            result_scores.append(rs)
+
+        best_score = max(result_scores) if result_scores else 0.0
+        if best_score > 0:
+            noise_threshold = best_score * 0.1  # 최고 점수의 10% 미만은 노이즈
+            filtered = [
+                r for r, s in zip(top_results, result_scores)
+                if s >= noise_threshold
+            ]
+            if filtered and len(filtered) < len(top_results):
+                logger.info(
+                    "노이즈 필터: %d → %d 결과 (threshold=%.4f)",
+                    len(top_results), len(filtered), noise_threshold,
+                )
+                top_results = filtered
+
     # VLM 컨텍스트 예산 제한 (max_model_len=8192 초과 방지)
     if len(top_results) > settings.max_context_pages:
         logger.warning("컨텍스트 페이지 수 제한: %d → %d", len(top_results), settings.max_context_pages)

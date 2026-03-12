@@ -1,4 +1,5 @@
 import logging
+import re
 from pathlib import Path
 
 from PIL import Image
@@ -6,32 +7,52 @@ from PIL import Image
 logger = logging.getLogger(__name__)
 
 
+def _clean_cell(val: str | None) -> str:
+    """셀 값 정리: None/공백 처리 + 줄바꿈을 공백으로."""
+    if not val:
+        return ""
+    return re.sub(r"\s+", " ", str(val)).strip()
+
+
+def _is_meaningful_header(headers: list[str]) -> bool:
+    """헤더 행이 의미 있는지 판단 (빈 헤더가 절반 이상이면 무의미)."""
+    non_empty = sum(1 for h in headers if h)
+    return non_empty >= len(headers) * 0.4 and non_empty >= 2
+
+
 def _format_table(table: list[list[str | None]]) -> str:
     """pdfplumber 표를 구조화 텍스트로 변환.
 
-    첫 행을 헤더로 사용하여 각 행을 `키: 값` 형태로 구성.
-    빈 셀은 스킵하고, 헤더가 없거나 행이 부족하면 빈 문자열 반환.
+    헤더가 의미 있으면 `키: 값` 형태, 아니면 `|`로 셀 나열.
     """
     if not table or len(table) < 2:
         return ""
 
-    # 헤더 행 (None → 빈 문자열)
-    headers = [str(h).strip() if h else "" for h in table[0]]
+    # 헤더 행 정리
+    headers = [_clean_cell(h) for h in table[0]]
+    use_headers = _is_meaningful_header(headers)
 
     rows_text = []
     for row in table[1:]:
         cells = []
         for j, cell in enumerate(row):
-            val = str(cell).strip() if cell else ""
+            val = _clean_cell(cell)
             if not val:
                 continue
-            header = headers[j] if j < len(headers) and headers[j] else f"열{j+1}"
-            cells.append(f"{header}: {val}")
+            if use_headers and j < len(headers) and headers[j]:
+                cells.append(f"{headers[j]}: {val}")
+            else:
+                cells.append(val)
         if cells:
             rows_text.append(" | ".join(cells))
 
     if not rows_text:
         return ""
+
+    # 헤더가 의미 있으면 헤더 라벨 추가
+    if use_headers:
+        header_line = " | ".join(h for h in headers if h)
+        return f"({header_line})\n" + "\n".join(rows_text)
 
     return "\n".join(rows_text)
 
@@ -58,7 +79,6 @@ def _extract_page_text_with_tables(page) -> str:
     if table_bboxes:
         non_table_page = page
         for bbox in table_bboxes:
-            # 표 영역을 crop out — pdfplumber의 .outside_bbox() 사용 불가 시 폴백
             try:
                 non_table_page = non_table_page.outside_bbox(bbox)
             except Exception:

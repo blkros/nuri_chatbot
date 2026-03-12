@@ -67,7 +67,7 @@ def rewrite_query(question: str, history: list[dict] | None = None) -> str:
             "## 규칙\n"
             "- 원본 질문의 핵심 키워드를 유지하고 동의어만 추가\n"
             "- 질문에 없는 구체적 내용(항목명, 구조, 설명)을 절대 추가하지 마세요\n"
-            "- 답변하지 마세요. 검색 키워드만 출력하세요\n"
+            "- 답변(결과값, 담당자명, 금액 등)을 절대 포함하지 마세요. 검색 키워드만 출력하세요\n"
             "- 1줄, 30자 이내\n"
         )
     else:
@@ -77,7 +77,7 @@ def rewrite_query(question: str, history: list[dict] | None = None) -> str:
             "## 규칙\n"
             "- 원본 질문의 핵심 키워드를 유지하고 동의어/유의어만 추가\n"
             "- 질문에 없는 구체적 내용(항목명, 구조, 설명)을 절대 추가하지 마세요\n"
-            "- 답변하지 마세요. 검색 키워드만 출력하세요\n"
+            "- 답변(결과값, 담당자명, 금액 등)을 절대 포함하지 마세요. 검색 키워드만 출력하세요\n"
             "- 1줄, 30자 이내\n"
         )
 
@@ -87,6 +87,8 @@ def rewrite_query(question: str, history: list[dict] | None = None) -> str:
     messages.extend([
         {"role": "user", "content": "결재 어떻게해?"},
         {"role": "assistant", "content": "결재 승인 절차 위임전결"},
+        {"role": "user", "content": "연구개발용 원자재 300만원 구입 시 결재권자가 누구야?"},
+        {"role": "assistant", "content": "연구개발용 원자재 300만원 구입 결재권자 위임전결"},
         {"role": "user", "content": "급식 메뉴 알려줘"},
         {"role": "assistant", "content": "급식 메뉴 식단표"},
         {"role": "user", "content": "회의록 내용 요약해줘"},

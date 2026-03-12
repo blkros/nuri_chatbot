@@ -12,11 +12,38 @@ _client = None
 
 
 def get_client() -> QdrantClient:
+    """Qdrant 클라이언트 반환 (연결 실패 시 재시도)."""
     global _client
-    if _client is None:
-        _client = QdrantClient(host=settings.qdrant_host, port=settings.qdrant_port, timeout=30)
-        logger.info("Qdrant 연결: %s:%d", settings.qdrant_host, settings.qdrant_port)
-    return _client
+    if _client is not None:
+        # 기존 연결 상태 확인
+        try:
+            _client.get_collections()
+            return _client
+        except Exception:
+            logger.warning("Qdrant 연결 끊김, 재연결 시도...")
+            _client = None
+
+    # 신규 연결 (최대 3회 재시도)
+    import time
+    for attempt in range(1, 4):
+        try:
+            _client = QdrantClient(
+                host=settings.qdrant_host,
+                port=settings.qdrant_port,
+                timeout=30,
+            )
+            _client.get_collections()  # 연결 검증
+            logger.info("Qdrant 연결 성공: %s:%d", settings.qdrant_host, settings.qdrant_port)
+            return _client
+        except Exception as e:
+            logger.warning("Qdrant 연결 실패 (시도 %d/3): %s", attempt, e)
+            _client = None
+            if attempt < 3:
+                time.sleep(2 * attempt)
+
+    raise ConnectionError(
+        f"Qdrant 연결 불가: {settings.qdrant_host}:{settings.qdrant_port}"
+    )
 
 
 def ensure_collection():

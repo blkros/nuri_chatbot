@@ -31,6 +31,16 @@ def _image_to_base64(image: Image.Image, quality: int = 85) -> str:
     return base64.b64encode(buf.getvalue()).decode("utf-8")
 
 
+def _get_vllm_client(timeout: float = 30.0) -> "OpenAI":
+    """vLLM OpenAI 클라이언트 생성 (공용 헬퍼)."""
+    from openai import OpenAI
+
+    return OpenAI(
+        base_url=settings.vllm_base_url, api_key="dummy",
+        timeout=httpx.Timeout(timeout, connect=10.0),
+    )
+
+
 def rewrite_query(question: str, history: list[dict] | None = None) -> str:
     """사용자 질문을 검색에 유리한 형태로 확장.
 
@@ -39,12 +49,7 @@ def rewrite_query(question: str, history: list[dict] | None = None) -> str:
     멀티턴 대화 시 이전 대화 맥락을 반영하여 후속 질문을 자기 완결적으로 변환.
     텍스트 전용 호출이라 빠름 (~0.5초).
     """
-    from openai import OpenAI
-
-    client = OpenAI(
-        base_url=settings.vllm_base_url, api_key="dummy",
-        timeout=httpx.Timeout(30.0, connect=10.0),
-    )
+    client = _get_vllm_client(timeout=30.0)
 
     # 멀티턴 히스토리가 있으면 시스템 프롬프트에 맥락 해석 지시 추가
     if history:
@@ -110,12 +115,7 @@ def describe_image_for_search(image: Image.Image) -> str:
     OCR 텍스트에 "급식", "메뉴" 같은 컨텍스트 키워드가 빠지는 문제를 해결.
     생성된 설명을 OCR 텍스트 앞에 붙여서 검색/리랭킹 품질을 높인다.
     """
-    from openai import OpenAI
-
-    client = OpenAI(
-        base_url=settings.vllm_base_url, api_key="dummy",
-        timeout=httpx.Timeout(60.0, connect=10.0),
-    )
+    client = _get_vllm_client(timeout=60.0)
 
     img_b64 = _image_to_base64(image, quality=80)
 
@@ -207,7 +207,14 @@ def _build_messages(
         text_limit = 3000 if img is None else 1500
         page_label = f"[문서 {i + 1}: {info['file_name']} {info['page_number']}페이지]"
         if ocr_text and ocr_text.strip():
-            page_label += f"\n--- 추출된 텍스트 ---\n{ocr_text[:text_limit]}\n---"
+            # 스마트 절삭: 앞 75% (제목/헤더) + 뒤 25% (결론/핵심)
+            if len(ocr_text) > text_limit:
+                front = text_limit * 3 // 4
+                back = text_limit - front
+                truncated = ocr_text[:front] + "\n...(중략)...\n" + ocr_text[-back:]
+            else:
+                truncated = ocr_text
+            page_label += f"\n--- 추출된 텍스트 ---\n{truncated}\n---"
         content.append({
             "type": "text",
             "text": page_label,
@@ -243,12 +250,7 @@ def generate_answer(
     Returns:
         {"answer": str, "sources": list[dict]}
     """
-    from openai import OpenAI
-
-    client = OpenAI(
-        base_url=settings.vllm_base_url, api_key="dummy",
-        timeout=httpx.Timeout(120.0, connect=10.0),
-    )
+    client = _get_vllm_client(timeout=120.0)
     messages = _build_messages(question, page_images, ocr_texts, source_info, history)
 
     response = client.chat.completions.create(
@@ -287,12 +289,7 @@ def generate_answer_stream(
     Yields:
         str: 토큰 텍스트 청크 (thinking 토큰 제거 후)
     """
-    from openai import OpenAI
-
-    client = OpenAI(
-        base_url=settings.vllm_base_url, api_key="dummy",
-        timeout=httpx.Timeout(180.0, connect=10.0),
-    )
+    client = _get_vllm_client(timeout=180.0)
     messages = _build_messages(question, page_images, ocr_texts, source_info, history)
 
     stream = client.chat.completions.create(
@@ -305,8 +302,10 @@ def generate_answer_stream(
 
     # /no_think 사용 시에도 간혹 <think>...</think>가 나올 수 있음
     # thinking 구간을 버퍼링하고 </think> 이후부터 yield
+    # 청크 경계에서 태그가 잘릴 수 있으므로 (<thi + nk>) pending_buffer 사용
     in_think = False
     think_buffer = ""
+    pending_buffer = ""  # 태그 시작 가능성이 있는 미확정 텍스트
 
     for chunk in stream:
         delta = chunk.choices[0].delta if chunk.choices else None
@@ -318,7 +317,6 @@ def generate_answer_stream(
         if in_think:
             think_buffer += text
             if "</think>" in think_buffer:
-                # thinking 끝 → 이후 텍스트만 yield
                 after = think_buffer.split("</think>", 1)[1]
                 in_think = False
                 think_buffer = ""
@@ -326,9 +324,12 @@ def generate_answer_stream(
                     yield after
             continue
 
-        if "<think>" in text:
-            # thinking 시작
-            before, _, remainder = text.partition("<think>")
+        # 미확정 버퍼와 합쳐서 태그 확인
+        combined = pending_buffer + text
+        pending_buffer = ""
+
+        if "<think>" in combined:
+            before, _, remainder = combined.partition("<think>")
             if before:
                 yield before
             in_think = True
@@ -341,6 +342,20 @@ def generate_answer_stream(
                     yield after
             continue
 
-        yield text
+        # "<" 로 끝나면 태그 시작일 수 있으므로 보류 (최대 7자: "<think>")
+        if combined.endswith("<") or any(
+            combined.endswith("<" + "think>"[:i]) for i in range(1, 6)
+        ):
+            # 안전한 부분만 yield, 나머지 보류
+            safe_end = combined.rfind("<")
+            if safe_end > 0:
+                yield combined[:safe_end]
+            pending_buffer = combined[safe_end:] if safe_end >= 0 else combined
+        else:
+            yield combined
+
+    # 잔여 버퍼 flush
+    if pending_buffer:
+        yield pending_buffer
 
     logger.info("VLM 스트리밍 답변 생성 완료")

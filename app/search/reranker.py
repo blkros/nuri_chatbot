@@ -16,13 +16,17 @@ def get_reranker():
     if _reranker_model is None:
         from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
-        logger.info("bge-reranker-v2-m3 로딩 중... (약 1.5GB RAM)")
-        _reranker_tokenizer = AutoTokenizer.from_pretrained(
-            settings.reranker_model_path
-        )
-        _reranker_model = AutoModelForSequenceClassification.from_pretrained(
-            settings.reranker_model_path
-        ).eval()
+        model_path = settings.reranker_model_path
+        logger.info("bge-reranker-v2-m3 로딩 중... (약 1.5GB RAM) [%s]", model_path)
+        try:
+            _reranker_tokenizer = AutoTokenizer.from_pretrained(model_path)
+            _reranker_model = AutoModelForSequenceClassification.from_pretrained(
+                model_path
+            ).eval()
+        except Exception as e:
+            raise RuntimeError(
+                f"bge-reranker-v2-m3 로드 실패 (경로: {model_path}): {e}"
+            ) from e
         logger.info("bge-reranker-v2-m3 로드 완료")
     return _reranker_model, _reranker_tokenizer
 

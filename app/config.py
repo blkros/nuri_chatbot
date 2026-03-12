@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     upload_dir: str = "/tmp/uploads"
     page_images_dir: str = "/data/page_images"
     max_upload_size_mb: int = 100
+    max_pages_per_document: int = 200  # 페이지 수 상한 (임베딩 비용 폭발 방지)
 
     # Embedding dimensions
     nemotron_dim: int = 2560
@@ -34,8 +35,14 @@ class Settings(BaseSettings):
     rerank_gap_threshold: float = 0.15
     text_sufficient_length: int = 150  # 이 글자수 이상이면 텍스트만으로 충분 (이미지 스킵)
     max_context_images: int = 5  # VLM에 전달 가능한 최대 이미지 수 (토큰 예산)
+    max_context_pages: int = 15  # VLM 컨텍스트 최대 페이지 수 (max_model_len 예산)
     doc_concentration_threshold: float = 0.5  # 검색 결과의 50%+ 같은 문서면 문서 확장
     max_doc_expansion_pages: int = 12  # 문서 확장 시 최대 페이지 수
+
+    # RRF (Reciprocal Rank Fusion)
+    rrf_k: int = 60  # RRF smoothing 파라미터
+    rrf_search_weight: float = 1.0  # 검색 순위 가중치
+    rrf_rerank_weight: float = 1.5  # 리랭크 순위 가중치
 
     model_config = {"env_prefix": "APP_"}
 

@@ -22,13 +22,19 @@ def get_nemotron_model():
     if _nemotron_model is None:
         from transformers import AutoModel
 
-        logger.info("Nemotron ColEmbed V2 로딩 중... (약 8GB RAM)")
-        _nemotron_model = AutoModel.from_pretrained(
-            settings.nemotron_model_path,
-            trust_remote_code=True,
-            dtype=torch.float32,
-            attn_implementation="eager",
-        ).eval()
+        model_path = settings.nemotron_model_path
+        logger.info("Nemotron ColEmbed V2 로딩 중... (약 8GB RAM) [%s]", model_path)
+        try:
+            _nemotron_model = AutoModel.from_pretrained(
+                model_path,
+                trust_remote_code=True,
+                dtype=torch.float32,
+                attn_implementation="eager",
+            ).eval()
+        except Exception as e:
+            raise RuntimeError(
+                f"Nemotron ColEmbed V2 로드 실패 (경로: {model_path}): {e}"
+            ) from e
         logger.info("Nemotron ColEmbed V2 로드 완료")
     return _nemotron_model
 
@@ -39,10 +45,14 @@ def get_bge_model():
     if _bge_model is None:
         from sentence_transformers import SentenceTransformer
 
-        logger.info("BGE-m3-ko 로딩 중... (약 1.5GB RAM)")
-        _bge_model = SentenceTransformer(
-            settings.bge_m3_ko_model_path, device="cpu"
-        )
+        model_path = settings.bge_m3_ko_model_path
+        logger.info("BGE-m3-ko 로딩 중... (약 1.5GB RAM) [%s]", model_path)
+        try:
+            _bge_model = SentenceTransformer(model_path, device="cpu")
+        except Exception as e:
+            raise RuntimeError(
+                f"BGE-m3-ko 로드 실패 (경로: {model_path}): {e}"
+            ) from e
         logger.info("BGE-m3-ko 로드 완료")
     return _bge_model
 

@@ -65,7 +65,29 @@ async def startup():
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    """서비스 상태 확인 (Qdrant + vLLM 연결 포함)."""
+    import httpx as _httpx
+
+    checks = {"qdrant": "ok", "vllm": "ok"}
+
+    # Qdrant 연결 확인
+    try:
+        from app.vectordb.qdrant_client import get_client
+        get_client().get_collections()
+    except Exception as e:
+        checks["qdrant"] = f"error: {e}"
+
+    # vLLM 연결 확인
+    try:
+        async with _httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(f"{settings.vllm_base_url}/models")
+            if resp.status_code != 200:
+                checks["vllm"] = f"error: HTTP {resp.status_code}"
+    except Exception as e:
+        checks["vllm"] = f"error: {e}"
+
+    all_ok = all(v == "ok" for v in checks.values())
+    return {"status": "ok" if all_ok else "degraded", **checks}
 
 
 # ─── 문서 인제스트 ───────────────────────────────────────────
@@ -108,6 +130,19 @@ async def ingest_document(
         # 1. 문서 → 페이지 이미지 + 텍스트 추출
         page_images, temp_pdf_path, page_texts, chunk_metas = process_document(file_path)
 
+        # 페이지 수 상한 제한 (임베딩 비용 폭발 방지)
+        max_pages = settings.max_pages_per_document
+        total_pages = len(page_images) if page_images else len(page_texts)
+        if total_pages > max_pages:
+            logger.warning(
+                "페이지 수 제한: %s (%d → %d 페이지)", safe_filename, total_pages, max_pages
+            )
+            if page_images:
+                page_images = page_images[:max_pages]
+            page_texts = page_texts[:max_pages]
+            if chunk_metas:
+                chunk_metas = chunk_metas[:max_pages]
+
         # 2. 분류 (이미지 있으면 VLM, 없으면 키워드 폴백)
         all_text = "\n".join(page_texts[:3])
         classification = classify_document_vlm(
@@ -133,6 +168,44 @@ async def ingest_document(
                 logger.info("이미지 설명 추가 완료: %s", safe_filename)
             except Exception as e:
                 logger.warning("이미지 설명 생성 실패 (OCR만 사용): %s", e)
+
+        # 빈 페이지 필터링 (텍스트 없고 이미지도 없는 페이지 제거)
+        MIN_MEANINGFUL_TEXT = 10
+        if page_images:
+            filtered = [
+                (img, txt, meta)
+                for i, (img, txt) in enumerate(zip(page_images, page_texts))
+                for meta in [chunk_metas[i] if chunk_metas and i < len(chunk_metas) else None]
+                if len(txt.strip()) >= MIN_MEANINGFUL_TEXT or img is not None
+            ]
+            if filtered:
+                page_images = [f[0] for f in filtered]
+                page_texts = [f[1] for f in filtered]
+                if chunk_metas:
+                    chunk_metas = [f[2] for f in filtered]
+                if len(filtered) < total_pages:
+                    logger.info("빈 페이지 필터링: %d → %d 페이지", total_pages, len(filtered))
+        else:
+            # 텍스트 전용 (Excel 등): 빈 청크 제거
+            filtered_txt = []
+            filtered_meta = []
+            for i, txt in enumerate(page_texts):
+                if len(txt.strip()) >= MIN_MEANINGFUL_TEXT:
+                    filtered_txt.append(txt)
+                    if chunk_metas and i < len(chunk_metas):
+                        filtered_meta.append(chunk_metas[i])
+            if filtered_txt:
+                if len(filtered_txt) < len(page_texts):
+                    logger.info("빈 청크 필터링: %d → %d", len(page_texts), len(filtered_txt))
+                page_texts = filtered_txt
+                if chunk_metas:
+                    chunk_metas = filtered_meta
+
+        if not page_images and not page_texts:
+            return JSONResponse(
+                status_code=400,
+                content={"status": "error", "detail": "문서에서 텍스트를 추출할 수 없습니다."},
+            )
 
         # 기존 동일 파일의 벡터 삭제 (중복 방지)
         delete_document_pages(safe_filename)
@@ -437,16 +510,13 @@ def search_documents(
         # 4. 검색 순위 + 리랭크 순위 RRF 결합
         rerank_order = {idx: rank for rank, (idx, _) in enumerate(ranked)}
         rerank_scores = {idx: score for idx, score in ranked}
-        RRF_K = 60
-        SEARCH_WEIGHT = 1.0
-        RERANK_WEIGHT = 1.5
 
         fused = []
         for search_rank in range(len(results)):
             rr_rank = rerank_order.get(search_rank, len(results))
             score = (
-                SEARCH_WEIGHT / (RRF_K + search_rank)
-                + RERANK_WEIGHT / (RRF_K + rr_rank)
+                settings.rrf_search_weight / (settings.rrf_k + search_rank)
+                + settings.rrf_rerank_weight / (settings.rrf_k + rr_rank)
             )
             fused.append((search_rank, score))
 
@@ -509,30 +579,36 @@ def _prepare_rag_context(question: str, top_k: int = 0, history: list[dict] | No
         logger.info("검색 결과 중복 제거: %d → %d", len(results), len(deduped))
         results = deduped
 
-    # 3. 리랭킹
-    ocr_texts = [r["ocr_text"] for r in results]
-    ranked = rerank(search_query, ocr_texts, top_k=len(results))
+    # 3. 리랭킹 (실패 시 검색 점수 순서 폴백)
+    try:
+        ocr_texts = [r["ocr_text"] for r in results]
+        ranked = rerank(search_query, ocr_texts, top_k=len(results))
+        rerank_failed = False
+    except Exception as e:
+        logger.warning("리랭킹 실패, 검색 점수 순서 사용: %s", e)
+        ranked = [(i, 0.5) for i in range(len(results))]
+        rerank_failed = True
 
     # 4. Adaptive top_k
     if top_k <= 0:
-        rerank_scores_sorted = [score for _, score in ranked]
-        effective_k = _compute_adaptive_k(rerank_scores_sorted)
+        if rerank_failed:
+            effective_k = min(settings.adaptive_max_k, len(results))
+        else:
+            rerank_scores_sorted = [score for _, score in ranked]
+            effective_k = _compute_adaptive_k(rerank_scores_sorted)
     else:
         effective_k = top_k
 
     # 5. RRF 결합
     rerank_order = {idx: rank for rank, (idx, _) in enumerate(ranked)}
     rerank_scores = {idx: score for idx, score in ranked}
-    RRF_K = 60
-    SEARCH_WEIGHT = 1.0
-    RERANK_WEIGHT = 1.5
 
     fused = []
     for search_rank in range(len(results)):
         rr_rank = rerank_order.get(search_rank, len(results))
         score = (
-            SEARCH_WEIGHT / (RRF_K + search_rank)
-            + RERANK_WEIGHT / (RRF_K + rr_rank)
+            settings.rrf_search_weight / (settings.rrf_k + search_rank)
+            + settings.rrf_rerank_weight / (settings.rrf_k + rr_rank)
         )
         fused.append((search_rank, score))
 
@@ -542,10 +618,9 @@ def _prepare_rag_context(question: str, top_k: int = 0, history: list[dict] | No
     top_results = _expand_with_doc_concentration(results, fused, effective_k, search_query)
 
     # VLM 컨텍스트 예산 제한 (max_model_len=8192 초과 방지)
-    MAX_CONTEXT_PAGES = 15
-    if len(top_results) > MAX_CONTEXT_PAGES:
-        logger.warning("컨텍스트 페이지 수 제한: %d → %d", len(top_results), MAX_CONTEXT_PAGES)
-        top_results = top_results[:MAX_CONTEXT_PAGES]
+    if len(top_results) > settings.max_context_pages:
+        logger.warning("컨텍스트 페이지 수 제한: %d → %d", len(top_results), settings.max_context_pages)
+        top_results = top_results[:settings.max_context_pages]
 
     # 이미지 전송: 텍스트 충분도 기반 결정 + 최대 이미지 수 제한
     page_images = []
@@ -613,7 +688,12 @@ def ask_question(
 
     except Exception as e:
         logger.exception("답변 생성 실패")
-        return JSONResponse(status_code=500, content={"status": "error", "detail": str(e)})
+        err_str = str(e).lower()
+        if any(kw in err_str for kw in ("connect", "timeout", "refused", "unreachable")):
+            user_msg = "AI 모델 서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요."
+        else:
+            user_msg = "답변 생성 중 오류가 발생했습니다. 다시 시도해주세요."
+        return JSONResponse(status_code=503, content={"status": "error", "detail": user_msg})
 
 
 @app.post("/ask/stream")
@@ -655,7 +735,13 @@ def ask_question_stream(
 
         except Exception as e:
             logger.exception("스트리밍 답변 생성 실패")
-            yield f"data: {json.dumps({'error': str(e)}, ensure_ascii=False)}\n\n"
+            # 사용자 친화적 에러 메시지 (VLM 연결 실패 vs 기타)
+            err_str = str(e).lower()
+            if any(kw in err_str for kw in ("connect", "timeout", "refused", "unreachable")):
+                user_msg = "AI 모델 서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요."
+            else:
+                user_msg = "답변 생성 중 오류가 발생했습니다. 다시 시도해주세요."
+            yield f"data: {json.dumps({'token': user_msg}, ensure_ascii=False)}\n\n"
             yield "data: [DONE]\n\n"
 
     return StreamingResponse(

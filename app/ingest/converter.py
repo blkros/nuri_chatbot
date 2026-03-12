@@ -8,6 +8,54 @@ from PIL import Image
 
 logger = logging.getLogger(__name__)
 
+# Magic bytes로 파일 무결성 사전 검증
+_MAGIC_SIGNATURES: dict[str, list[bytes]] = {
+    ".pdf": [b"%PDF"],
+    ".png": [b"\x89PNG"],
+    ".jpg": [b"\xff\xd8\xff"],
+    ".jpeg": [b"\xff\xd8\xff"],
+    ".gif": [b"GIF87a", b"GIF89a"],
+    ".bmp": [b"BM"],
+    ".tiff": [b"II\x2a\x00", b"MM\x00\x2a"],
+    ".webp": [b"RIFF"],
+    ".xlsx": [b"PK\x03\x04"],   # ZIP 기반
+    ".docx": [b"PK\x03\x04"],
+    ".pptx": [b"PK\x03\x04"],
+    ".hwpx": [b"PK\x03\x04"],
+    ".xls": [b"\xd0\xcf\x11\xe0"],  # OLE2
+    ".doc": [b"\xd0\xcf\x11\xe0"],
+    ".ppt": [b"\xd0\xcf\x11\xe0"],
+    ".hwp": [b"\xd0\xcf\x11\xe0"],
+}
+
+
+def validate_file(file_path: Path) -> None:
+    """파일 무결성 사전 검증 (빈 파일, magic bytes 불일치 탐지).
+
+    Raises:
+        ValueError: 파일이 비어있거나 magic bytes가 일치하지 않을 때
+    """
+    if not file_path.exists():
+        raise ValueError(f"파일이 존재하지 않습니다: {file_path}")
+
+    size = file_path.stat().st_size
+    if size == 0:
+        raise ValueError(f"빈 파일입니다: {file_path.name}")
+
+    suffix = file_path.suffix.lower()
+    signatures = _MAGIC_SIGNATURES.get(suffix)
+    if not signatures:
+        return  # 시그니처 미등록 포맷은 검증 스킵 (CSV, RTF 등)
+
+    with open(file_path, "rb") as f:
+        header = f.read(16)
+
+    if not any(header.startswith(sig) for sig in signatures):
+        raise ValueError(
+            f"파일 손상 또는 확장자 불일치: {file_path.name} "
+            f"(확장자: {suffix}, 실제 헤더: {header[:8].hex()})"
+        )
+
 
 def convert_hwp_to_pdf(hwp_path: Path) -> Path:
     """HWP 파일을 pyhwp(HTML) → LibreOffice(PDF) 2단계로 변환."""
@@ -49,12 +97,11 @@ def convert_hwp_to_pdf(hwp_path: Path) -> Path:
 
     if index_pdf.exists():
         index_pdf.rename(pdf_path)
-    elif not pdf_path.exists():
-        raise FileNotFoundError(f"변환된 PDF를 찾을 수 없음: {pdf_path}")
 
     # HTML 임시 디렉토리 정리
     shutil.rmtree(html_dir, ignore_errors=True)
 
+    _validate_pdf_output(pdf_path, hwp_path.name)
     logger.info("HWP→PDF 변환 완료: %s → %s", hwp_path.name, pdf_path.name)
     return pdf_path
 
@@ -89,6 +136,7 @@ def convert_office_to_pdf(file_path: Path) -> Path:
         raise FileNotFoundError(
             f"LibreOffice 변환 실패: {file_path.name} → PDF (stderr: {result.stderr})"
         )
+    _validate_pdf_output(pdf_path, file_path.name)
 
     logger.info("오피스→PDF 변환 완료: %s → %s", file_path.name, pdf_path.name)
     return pdf_path
@@ -140,6 +188,15 @@ def _ocr_fallback_for_empty_pages(
     return texts
 
 
+def _validate_pdf_output(pdf_path: Path, source_name: str) -> None:
+    """LibreOffice 변환 결과 PDF가 정상인지 검증."""
+    if not pdf_path.exists():
+        raise FileNotFoundError(f"변환된 PDF를 찾을 수 없음: {source_name}")
+    if pdf_path.stat().st_size < 100:  # 정상 PDF는 최소 수백 바이트
+        pdf_path.unlink(missing_ok=True)
+        raise ValueError(f"변환 결과가 비어있습니다 (PDF 크기 < 100B): {source_name}")
+
+
 def process_document(
     file_path: Path,
 ) -> tuple[list[Image.Image], Path | None, list[str], list[dict] | None]:
@@ -155,6 +212,9 @@ def process_document(
         extract_text_from_image,
         extract_texts_from_pdf,
     )
+
+    # 파일 무결성 사전 검증
+    validate_file(file_path)
 
     suffix = file_path.suffix.lower()
 

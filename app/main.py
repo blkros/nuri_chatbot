@@ -657,7 +657,7 @@ def _prepare_rag_context(question: str, top_k: int = 0, history: list[dict] | No
 
         best_score = max(result_scores) if result_scores else 0.0
         if best_score > 0:
-            noise_threshold = best_score * 0.1  # 최고 점수의 10% 미만은 노이즈
+            noise_threshold = best_score * 0.5  # 최고 점수의 50% 미만은 노이즈
             filtered = [
                 r for r, s in zip(top_results, result_scores)
                 if s >= noise_threshold

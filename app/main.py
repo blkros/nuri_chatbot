@@ -736,7 +736,16 @@ def _prepare_rag_context(question: str, top_k: int = 0, history: list[dict] | No
         {"file_name": r["file_name"], "page_number": r["page_number"]}
         for r in top_results
     ]
-    ocr_for_vlm = [r["ocr_text"] for r in top_results]
+    # VLM 답변 생성용 텍스트: 인제스트 시 생성된 이미지 설명은 제거
+    # (설명에 VLM 오독이 포함될 수 있음 — 검색/리랭킹에만 사용)
+    ocr_for_vlm = []
+    for r in top_results:
+        text = r["ocr_text"]
+        if text.startswith("[이미지 설명]"):
+            # "[이미지 설명] ... \n\n" 이후의 raw OCR만 사용
+            parts = text.split("\n\n", 1)
+            text = parts[1] if len(parts) > 1 else text
+        ocr_for_vlm.append(text)
 
     return {
         "page_images": page_images,

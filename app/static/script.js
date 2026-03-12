@@ -289,7 +289,7 @@ function escapeHtml(text) {
 
 function copyToClipboard(text) {
   if (navigator.clipboard && window.isSecureContext) {
-    return copyToClipboard(text);
+    return navigator.clipboard.writeText(text);
   }
   // HTTP fallback: textarea + execCommand
   const ta = document.createElement("textarea");

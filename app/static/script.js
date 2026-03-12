@@ -205,7 +205,7 @@ function addAIMessage(html, sources = null, save = true) {
   div.innerHTML = inner;
   div.querySelector(".copy-btn").addEventListener("click", function() {
     const bubble = div.querySelector(".bubble");
-    navigator.clipboard.writeText(bubble.innerText).then(() => {
+    copyToClipboard(bubble.innerText).then(() => {
       this.textContent = "복사됨";
       this.classList.add("copied");
       setTimeout(() => { this.textContent = "복사"; this.classList.remove("copied"); }, 1500);
@@ -238,7 +238,7 @@ function finalizeStreamingMessage(fullText, sources) {
     copyBtn.title = "복사";
     copyBtn.textContent = "복사";
     copyBtn.addEventListener("click", function() {
-      navigator.clipboard.writeText(bubble.innerText).then(() => {
+      copyToClipboard(bubble.innerText).then(() => {
         copyBtn.textContent = "복사됨";
         copyBtn.classList.add("copied");
         setTimeout(() => { copyBtn.textContent = "복사"; copyBtn.classList.remove("copied"); }, 1500);
@@ -285,6 +285,22 @@ function escapeHtml(text) {
   const div = document.createElement("div");
   div.textContent = text;
   return div.innerHTML;
+}
+
+function copyToClipboard(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    return copyToClipboard(text);
+  }
+  // HTTP fallback: textarea + execCommand
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.position = "fixed";
+  ta.style.left = "-9999px";
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand("copy"); } catch (e) { /* ignore */ }
+  document.body.removeChild(ta);
+  return Promise.resolve();
 }
 
 // ── File upload ──
@@ -709,7 +725,7 @@ chatMessages.addEventListener("click", (e) => {
   const targetId = e.target.dataset.target;
   const pre = document.getElementById(targetId);
   if (!pre) return;
-  navigator.clipboard.writeText(pre.textContent).then(() => {
+  copyToClipboard(pre.textContent).then(() => {
     e.target.textContent = "복사됨";
     setTimeout(() => { e.target.textContent = "복사"; }, 1500);
   });

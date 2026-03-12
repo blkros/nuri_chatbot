@@ -639,14 +639,12 @@ def _prepare_rag_context(question: str, top_k: int = 0, history: list[dict] | No
     # 6. 문서 집중도 기반 컨텍스트 확장
     top_results = _expand_with_doc_concentration(results, fused, effective_k, search_query, rerank_scores)
 
-    # 6.5 노이즈 필터: rerank 점수가 최고 점수 대비 매우 낮은 결과 제거
-    # (VLM 컨텍스트에 무관한 문서가 섞이면 답변 품질 저하)
+    # 6.5 노이즈 필터: absolute floor + gap 기반 자연 끊김점 탐지
+    # 고정 비율 threshold 대신 점수 분포의 구조를 분석하여 노이즈 제거
     if rerank_scores and len(top_results) > 1:
         # top_results의 rerank 점수 매핑
         result_scores = []
         for r in top_results:
-            key = (r["file_name"], r["page_number"])
-            # fused 인덱스에서 rerank_score 찾기
             rs = max(
                 (rerank_scores.get(idx, 0.0) for idx in range(len(results))
                  if results[idx]["file_name"] == r["file_name"]
@@ -655,19 +653,54 @@ def _prepare_rag_context(question: str, top_k: int = 0, history: list[dict] | No
             )
             result_scores.append(rs)
 
-        best_score = max(result_scores) if result_scores else 0.0
-        if best_score > 0:
-            noise_threshold = best_score * 0.5  # 최고 점수의 50% 미만은 노이즈
-            filtered = [
-                r for r, s in zip(top_results, result_scores)
-                if s >= noise_threshold
-            ]
-            if filtered and len(filtered) < len(top_results):
+        # (A) Absolute floor: 절대 최소 점수 미만 제거
+        floor = settings.noise_score_floor
+        floor_filtered = [
+            (r, s) for r, s in zip(top_results, result_scores)
+            if s >= floor
+        ]
+        if floor_filtered and len(floor_filtered) < len(top_results):
+            removed = len(top_results) - len(floor_filtered)
+            logger.info(
+                "노이즈 필터(floor): %d개 제거 (score < %.4f)",
+                removed, floor,
+            )
+            top_results = [r for r, _ in floor_filtered]
+            result_scores = [s for _, s in floor_filtered]
+
+        # (B) Gap detection: 점수 내림차순 정렬 후 자연 끊김점 탐색
+        if len(top_results) > 1:
+            # 점수 내림차순으로 인덱스 정렬
+            sorted_pairs = sorted(
+                enumerate(result_scores), key=lambda x: x[1], reverse=True,
+            )
+            sorted_scores = [s for _, s in sorted_pairs]
+
+            # 연속 점수 간 갭 계산
+            gaps = [sorted_scores[i] - sorted_scores[i + 1]
+                    for i in range(len(sorted_scores) - 1)]
+            mean_gap = sum(gaps) / len(gaps) if gaps else 0.0
+
+            # 평균 갭의 N배 이상인 곳에서 컷
+            cut_at = None
+            for i, gap in enumerate(gaps):
+                if mean_gap > 0 and gap >= mean_gap * settings.noise_gap_ratio:
+                    cut_at = i + 1  # 상위 i+1개만 유지
+                    break
+
+            if cut_at and cut_at < len(top_results):
+                # 정렬된 순서에서 상위 cut_at개의 원래 인덱스
+                keep_indices = set(idx for idx, _ in sorted_pairs[:cut_at])
+                gap_filtered = [
+                    r for i, r in enumerate(top_results)
+                    if i in keep_indices
+                ]
                 logger.info(
-                    "노이즈 필터: %d → %d 결과 (threshold=%.4f)",
-                    len(top_results), len(filtered), noise_threshold,
+                    "노이즈 필터(gap): %d → %d 결과 (gap=%.4f, mean=%.4f, ratio=%.1f)",
+                    len(top_results), len(gap_filtered),
+                    gaps[cut_at - 1], mean_gap, settings.noise_gap_ratio,
                 )
-                top_results = filtered
+                top_results = gap_filtered
 
     # VLM 컨텍스트 예산 제한 (max_model_len=8192 초과 방지)
     if len(top_results) > settings.max_context_pages:

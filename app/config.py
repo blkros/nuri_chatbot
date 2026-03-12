@@ -39,6 +39,10 @@ class Settings(BaseSettings):
     doc_concentration_threshold: float = 0.5  # 검색 결과의 50%+ 같은 문서면 문서 확장
     max_doc_expansion_pages: int = 12  # 문서 확장 시 최대 페이지 수
 
+    # Noise filter (absolute floor + gap detection)
+    noise_score_floor: float = 0.02  # rerank 절대 최소 점수 (이하 제거)
+    noise_gap_ratio: float = 2.0  # 평균 갭의 N배 이상이면 자연 끊김으로 판단
+
     # RRF (Reciprocal Rank Fusion)
     rrf_k: int = 60  # RRF smoothing 파라미터
     rrf_search_weight: float = 1.0  # 검색 순위 가중치

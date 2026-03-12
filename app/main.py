@@ -428,6 +428,14 @@ def _expand_with_doc_concentration(
     else:
         anchor_best_score = 1.0  # rerank_scores 없으면 확장 허용
 
+    # ── 집중도 높지만 anchor 점수가 낮음 → 확장 없이 초기 결과만 반환 ──
+    if concentration >= settings.doc_concentration_threshold and anchor_best_score < settings.rerank_score_min:
+        logger.info(
+            "집중도 높으나 앵커 점수 낮음 (%.3f < %.3f), 확장 스킵",
+            anchor_best_score, settings.rerank_score_min,
+        )
+        return [results[idx] for idx in top_indices]
+
     # ── 집중도 높음 + anchor 문서가 실제로 관련 있음 → 문서 확장 ──
     if concentration >= settings.doc_concentration_threshold and anchor_best_score >= settings.rerank_score_min:
         all_pages = get_document_pages(anchor_file, limit=200)

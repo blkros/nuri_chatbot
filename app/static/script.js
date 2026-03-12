@@ -225,9 +225,17 @@ function addStreamingAIMessage() {
   return document.getElementById("streaming-bubble");
 }
 
+// VLM/OCR 반복 오독 교정 (운영 중 발견 시 추가)
+const CORRECTIONS = [["섀러드바", "셀러드바"], ["섀러드", "셀러드"]];
+function applyCorrections(text) {
+  for (const [wrong, right] of CORRECTIONS) text = text.replaceAll(wrong, right);
+  return text;
+}
+
 function finalizeStreamingMessage(fullText, sources) {
   const bubble = document.getElementById("streaming-bubble");
   if (!bubble) return;
+  fullText = applyCorrections(fullText);
   bubble.innerHTML = formatAnswer(fullText);
   bubble.removeAttribute("id");
 

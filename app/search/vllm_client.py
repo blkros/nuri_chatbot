@@ -174,6 +174,21 @@ def describe_image_for_search(image: Image.Image) -> str:
     return answer
 
 
+# VLM/OCR 반복 오독 교정 사전 (운영 중 발견 시 추가)
+_CORRECTIONS = {
+    "섀러드바": "셀러드바",
+    "섀러드": "셀러드",
+}
+
+
+def _apply_corrections(text: str) -> str:
+    """VLM 응답에서 알려진 오독 패턴을 교정."""
+    for wrong, right in _CORRECTIONS.items():
+        if wrong in text:
+            text = text.replace(wrong, right)
+    return text
+
+
 _SYSTEM_PROMPT = (
     "/no_think\n"
     "당신은 사내 문서 기반 질의응답 AI 어시스턴트입니다.\n"
@@ -289,6 +304,7 @@ def generate_answer(
     # thinking 토큰이 포함된 경우 제거
     if "</think>" in answer:
         answer = answer.split("</think>")[-1].strip()
+    answer = _apply_corrections(answer)
     logger.info("VLM 답변 생성 완료 (%d 토큰)", response.usage.completion_tokens if response.usage else 0)
 
     return {

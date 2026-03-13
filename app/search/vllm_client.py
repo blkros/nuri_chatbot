@@ -129,15 +129,16 @@ def rewrite_query(question: str, history: list[dict] | None = None) -> str:
     return rewritten
 
 
-def describe_image_for_search(image: Image.Image) -> str:
-    """이미지 파일 인제스트 시 VLM으로 검색용 설명 생성.
+def extract_structured_text_from_image(image: Image.Image) -> str:
+    """이미지 파일 인제스트 시 VLM으로 구조화된 텍스트 추출.
 
-    OCR 텍스트에 "급식", "메뉴" 같은 컨텍스트 키워드가 빠지는 문제를 해결.
-    생성된 설명을 OCR 텍스트 앞에 붙여서 검색/리랭킹 품질을 높인다.
+    OCR은 레이아웃과 컨텍스트 키워드를 놓치는 반면,
+    VLM은 이미지 한 장에 집중하여 표/목록/텍스트를 정확히 추출할 수 있다.
+    추출된 텍스트는 OCR 대체로 저장되어 검색과 답변 생성 모두에 사용.
     """
-    client = _get_vllm_client(timeout=60.0)
+    client = _get_vllm_client(timeout=90.0)
 
-    img_b64 = _image_to_base64(image, quality=80)
+    img_b64 = _image_to_base64(image, quality=85)
 
     response = client.chat.completions.create(
         model=settings.vllm_model,
@@ -153,17 +154,20 @@ def describe_image_for_search(image: Image.Image) -> str:
                         "type": "text",
                         "text": (
                             "/no_think\n"
-                            "이 이미지의 내용을 검색에 유용하도록 2~3문장으로 설명하세요.\n"
-                            "- 문서 종류 (예: 급식 메뉴표, 조직도, 공지사항 등)\n"
-                            "- 핵심 키워드 나열\n"
-                            "- 날짜, 기간 등 시간 정보가 있으면 포함\n"
-                            "설명만 출력하세요."
+                            "이 이미지에서 모든 텍스트와 데이터를 빠짐없이 추출하세요.\n\n"
+                            "규칙:\n"
+                            "1. 먼저 문서 유형을 한 줄로 명시 (예: [문서유형: 급식 메뉴표], [문서유형: 조직도])\n"
+                            "2. 표가 있으면 행 단위로 구조화: [행 N] 열이름: 값 | 열이름: 값 | ...\n"
+                            "3. 날짜, 숫자, 이름, 금액 등 모든 데이터를 원본 그대로 기록\n"
+                            "4. 기호(●○■◆ 등)가 있으면 그대로 보존\n"
+                            "5. 추측하지 말고 이미지에 보이는 것만 기록\n"
+                            "6. 설명이나 해석 없이 추출 결과만 출력"
                         ),
                     },
                 ],
             },
         ],
-        max_tokens=200,
+        max_tokens=2048,
         temperature=0.1,
     )
 
@@ -172,7 +176,7 @@ def describe_image_for_search(image: Image.Image) -> str:
     answer = response.choices[0].message.content.strip()
     if "</think>" in answer:
         answer = answer.split("</think>")[-1].strip()
-    logger.info("이미지 설명 생성: %s", answer[:100])
+    logger.info("이미지 구조화 추출: %d글자, %s", len(answer), answer[:100])
     return answer
 
 

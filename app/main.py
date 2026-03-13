@@ -21,7 +21,7 @@ from app.ingest.embedder import (
 )
 from app.search.reranker import rerank
 from app.search.vllm_client import (
-    describe_image_for_search,
+    extract_structured_text_from_image,
     generate_answer,
     generate_answer_stream,
     rewrite_query,
@@ -170,15 +170,18 @@ async def ingest_document(
             "summary": summary,
         }
 
-        # 이미지 파일: VLM 설명을 OCR 텍스트 앞에 붙여 검색 품질 향상
-        # (OCR은 레이아웃/컨텍스트 키워드를 놓치므로 VLM이 보완)
+        # 이미지 파일: VLM 구조화 추출로 OCR 텍스트 대체
+        # (OCR은 레이아웃/컨텍스트 키워드를 놓치므로 VLM이 직접 추출)
         if suffix in IMAGE_EXTENSIONS and page_images:
             try:
-                description = describe_image_for_search(page_images[0])
-                page_texts = [f"[이미지 설명] {description}\n\n{t}" for t in page_texts]
-                logger.info("이미지 설명 추가 완료: %s", safe_filename)
+                extracted = extract_structured_text_from_image(page_images[0])
+                if extracted:
+                    page_texts = [f"[이미지 추출]\n{extracted}" for _ in page_texts]
+                    logger.info("이미지 구조화 추출 완료: %s (%d글자)", safe_filename, len(extracted))
+                else:
+                    logger.warning("이미지 구조화 추출 빈 결과 (OCR 유지): %s", safe_filename)
             except Exception as e:
-                logger.warning("이미지 설명 생성 실패 (OCR만 사용): %s", e)
+                logger.warning("이미지 구조화 추출 실패 (OCR만 사용): %s", e)
 
         # 빈 페이지 필터링 (텍스트 없고 이미지도 없는 페이지 제거)
         MIN_MEANINGFUL_TEXT = 10
@@ -775,13 +778,17 @@ def _prepare_rag_context(question: str, top_k: int = 0, history: list[dict] | No
         {"file_name": r["file_name"], "page_number": r["page_number"]}
         for r in top_results
     ]
-    # VLM 답변 생성용 텍스트: 인제스트 시 생성된 이미지 설명은 제거
-    # (설명에 VLM 오독이 포함될 수 있음 — 검색/리랭킹에만 사용)
+    # VLM 답변 생성용 텍스트
+    # - [이미지 추출]: VLM 구조화 추출 → 그대로 사용 (정확한 데이터)
+    # - [이미지 설명]: 레거시 설명 → 제거하고 raw OCR만 사용
     ocr_for_vlm = []
     for r in top_results:
         text = r["ocr_text"]
-        if text.startswith("[이미지 설명]"):
-            # "[이미지 설명] ... \n\n" 이후의 raw OCR만 사용
+        if text.startswith("[이미지 추출]"):
+            # 구조화 추출 텍스트 그대로 사용 (접두사만 제거)
+            text = text[len("[이미지 추출]"):].strip()
+        elif text.startswith("[이미지 설명]"):
+            # 레거시: 설명 제거, raw OCR만 사용
             parts = text.split("\n\n", 1)
             text = parts[1] if len(parts) > 1 else text
         ocr_for_vlm.append(text)

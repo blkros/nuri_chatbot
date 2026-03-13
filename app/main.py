@@ -673,6 +673,7 @@ def _prepare_rag_context(question: str, top_k: int = 0, history: list[dict] | No
             result_scores.append(rs)
 
         # (A) Absolute floor: 절대 최소 점수 미만 제거
+        #     단, 전부 제거되면 fused score 상위 2개 복구 (fail-open)
         floor = settings.noise_score_floor
         floor_filtered = [
             (r, s) for r, s in zip(top_results, result_scores)
@@ -686,6 +687,15 @@ def _prepare_rag_context(question: str, top_k: int = 0, history: list[dict] | No
             )
             top_results = [r for r, _ in floor_filtered]
             result_scores = [s for _, s in floor_filtered]
+        elif not floor_filtered:
+            # 전부 floor 미만 → 절대 기준 무의미, fused 상위 2개만 유지
+            keep_n = min(2, len(top_results))
+            logger.warning(
+                "노이즈 필터(floor): 전부 %.4f 미만 → fused 상위 %d개 복구",
+                floor, keep_n,
+            )
+            top_results = top_results[:keep_n]
+            result_scores = result_scores[:keep_n]
 
         # (B) Gap detection: 점수 내림차순 정렬 후 자연 끊김점 탐색
         if len(top_results) > 1:

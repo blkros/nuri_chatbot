@@ -17,6 +17,7 @@ from app.ingest.embedder import (
     embed_query_for_images,
     embed_query_text,
     embed_texts,
+    text_to_sparse_vector,
 )
 from app.search.reranker import rerank
 from app.search.vllm_client import (
@@ -244,6 +245,7 @@ async def ingest_document(
             for i, (img_vec, txt_vec, page_text, img_path) in enumerate(
                 zip(img_vectors_list, text_vectors, page_texts, image_paths)
             ):
+                sparse_vec = text_to_sparse_vector(page_text)
                 pid = upsert_page(
                     file_name=safe_filename,
                     page_number=i + 1,
@@ -252,6 +254,7 @@ async def ingest_document(
                     ocr_text=page_text,
                     image_path=img_path,
                     metadata=metadata,
+                    sparse_vector=sparse_vec,
                 )
                 point_ids.append(pid)
         else:
@@ -268,6 +271,7 @@ async def ingest_document(
                 if chunk_metas and i < len(chunk_metas):
                     chunk_meta.update(chunk_metas[i])
 
+                sparse_vec = text_to_sparse_vector(page_text)
                 pid = upsert_page(
                     file_name=safe_filename,
                     page_number=i + 1,
@@ -276,6 +280,7 @@ async def ingest_document(
                     ocr_text=page_text,
                     image_path="",
                     metadata=chunk_meta,
+                    sparse_vector=sparse_vec,
                 )
                 point_ids.append(pid)
 
@@ -524,11 +529,13 @@ def search_documents(
         # 1. 쿼리 임베딩
         text_vector = embed_query_text(question)
         image_vectors = embed_query_for_images(question)
+        sparse_vector = text_to_sparse_vector(question)
 
         # 2. Qdrant 하이브리드 검색
         results = search_pages(
             text_query_vector=text_vector,
             image_query_vectors=image_vectors,
+            sparse_query_vector=sparse_vector,
             limit=limit,
         )
 
@@ -585,11 +592,13 @@ def _prepare_rag_context(question: str, top_k: int = 0, history: list[dict] | No
     # 1. 쿼리 임베딩
     text_vector = embed_query_text(search_query)
     image_vectors = embed_query_for_images(search_query)
+    sparse_vector = text_to_sparse_vector(search_query)
 
     # 2. Qdrant 하이브리드 검색
     results = search_pages(
         text_query_vector=text_vector,
         image_query_vectors=image_vectors,
+        sparse_query_vector=sparse_vector,
         limit=15,
     )
 

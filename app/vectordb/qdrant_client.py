@@ -70,8 +70,13 @@ def ensure_collection():
                 distance=models.Distance.COSINE,
             ),
         },
+        sparse_vectors_config={
+            "sparse_vector": models.SparseVectorParams(
+                modifier=models.Modifier.IDF,
+            ),
+        },
     )
-    logger.info("컬렉션 '%s' 생성 완료", settings.collection_name)
+    logger.info("컬렉션 '%s' 생성 완료 (sparse vector 포함)", settings.collection_name)
 
 
 def upsert_page(
@@ -82,6 +87,7 @@ def upsert_page(
     ocr_text: str,
     image_path: str = "",
     metadata: dict | None = None,
+    sparse_vector: tuple[list[int], list[float]] | None = None,
 ):
     """단일 페이지를 Qdrant에 저장. image_vectors=None이면 텍스트 벡터만 저장."""
     client = get_client()
@@ -99,6 +105,12 @@ def upsert_page(
     vectors = {"text_vector": text_vector}
     if image_vectors is not None:
         vectors["image_vector"] = image_vectors
+    if sparse_vector is not None:
+        indices, values = sparse_vector
+        if indices:
+            vectors["sparse_vector"] = models.SparseVector(
+                indices=indices, values=values,
+            )
 
     client.upsert(
         collection_name=settings.collection_name,
@@ -143,11 +155,12 @@ def delete_document_pages(file_name: str) -> int:
 def search_pages(
     text_query_vector: list[float],
     image_query_vectors: list[list[float]],
+    sparse_query_vector: tuple[list[int], list[float]] | None = None,
     limit: int = 10,
     department: str | None = None,
     doc_type: str | None = None,
 ) -> list[dict]:
-    """하이브리드 검색: text_vector + image_vector를 RRF로 융합."""
+    """하이브리드 검색: text_vector + image_vector + sparse_vector를 RRF로 융합."""
     client = get_client()
 
     # 메타데이터 필터 구성
@@ -170,23 +183,39 @@ def search_pages(
     # text prefetch 한도를 높여 RRF 퓨전에서 불리함을 보정
     text_prefetch_limit = max(limit * 3, 30)
     image_prefetch_limit = max(limit * 2, 20)
+    sparse_prefetch_limit = max(limit * 2, 20)
+
+    prefetch_list = [
+        models.Prefetch(
+            query=text_query_vector,
+            using="text_vector",
+            limit=text_prefetch_limit,
+            filter=query_filter,
+        ),
+        models.Prefetch(
+            query=image_query_vectors,
+            using="image_vector",
+            limit=image_prefetch_limit,
+            filter=query_filter,
+        ),
+    ]
+
+    # sparse vector prefetch 추가 (키워드 매칭)
+    if sparse_query_vector is not None:
+        indices, values = sparse_query_vector
+        if indices:
+            prefetch_list.append(
+                models.Prefetch(
+                    query=models.SparseVector(indices=indices, values=values),
+                    using="sparse_vector",
+                    limit=sparse_prefetch_limit,
+                    filter=query_filter,
+                ),
+            )
 
     results = client.query_points(
         collection_name=settings.collection_name,
-        prefetch=[
-            models.Prefetch(
-                query=text_query_vector,
-                using="text_vector",
-                limit=text_prefetch_limit,
-                filter=query_filter,
-            ),
-            models.Prefetch(
-                query=image_query_vectors,
-                using="image_vector",
-                limit=image_prefetch_limit,
-                filter=query_filter,
-            ),
-        ],
+        prefetch=prefetch_list,
         query=models.FusionQuery(fusion=models.Fusion.RRF),
         limit=limit,
         with_payload=True,

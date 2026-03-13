@@ -117,6 +117,39 @@ def embed_query_text(query: str) -> list[float]:
     return embed_texts([query])[0]
 
 
+def text_to_sparse_vector(text: str) -> tuple[list[int], list[float]]:
+    """텍스트를 sparse vector로 변환 (해시 기반 한국어 토크나이저).
+
+    한국어 단어 + 2-gram으로 토큰화하고, 토큰 빈도를 가중치로 사용.
+    별도 사전/형태소 분석기 없이 해시 함수로 인덱스를 결정.
+    """
+    import hashlib
+    import re
+    from collections import Counter
+
+    # 한국어/영문/숫자 단어 추출 (2글자 이상 또는 한글 1글자)
+    tokens = re.findall(r'[\w가-힣]+', text.lower())
+    tokens = [t for t in tokens if len(t) >= 2 or ('\uac00' <= t <= '\ud7a3')]
+
+    # 2-gram 추가 (인접 단어 조합으로 구문 매칭 강화)
+    bigrams = [f"{tokens[i]}_{tokens[i+1]}" for i in range(len(tokens) - 1)]
+    all_tokens = tokens + bigrams
+
+    if not all_tokens:
+        return [], []
+
+    counts = Counter(all_tokens)
+    indices = []
+    values = []
+    for token, count in counts.items():
+        # MD5 해시 → 양수 정수 인덱스 (Qdrant sparse vector용)
+        idx = int(hashlib.md5(token.encode()).hexdigest()[:8], 16)
+        indices.append(idx)
+        values.append(float(count))
+
+    return indices, values
+
+
 def embed_query_for_images(query: str) -> list[list[float]]:
     """텍스트 쿼리를 Nemotron ColEmbed multi-vector로 변환 (이미지 벡터 검색용)."""
     model = get_nemotron_model()

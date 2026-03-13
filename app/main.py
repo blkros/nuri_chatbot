@@ -688,14 +688,24 @@ def _prepare_rag_context(question: str, top_k: int = 0, history: list[dict] | No
             top_results = [r for r, _ in floor_filtered]
             result_scores = [s for _, s in floor_filtered]
         elif not floor_filtered:
-            # 전부 floor 미만 → 절대 기준 무의미, fused 상위 2개만 유지
-            keep_n = min(2, len(top_results))
+            # 전부 floor 미만 → 절대 기준 무의미
+            # 문서 다양성 고려: 서로 다른 문서에서 fused 상위 1개씩, 최대 3개
+            seen_docs = set()
+            diverse_indices = []
+            for i, r in enumerate(top_results):
+                doc = r["file_name"]
+                if doc not in seen_docs:
+                    seen_docs.add(doc)
+                    diverse_indices.append(i)
+                    if len(diverse_indices) >= 3:
+                        break
             logger.warning(
-                "노이즈 필터(floor): 전부 %.4f 미만 → fused 상위 %d개 복구",
-                floor, keep_n,
+                "노이즈 필터(floor): 전부 %.4f 미만 → 다양성 기반 %d개 복구 (%s)",
+                floor, len(diverse_indices),
+                [top_results[i]["file_name"] for i in diverse_indices],
             )
-            top_results = top_results[:keep_n]
-            result_scores = result_scores[:keep_n]
+            top_results = [top_results[i] for i in diverse_indices]
+            result_scores = [result_scores[i] for i in diverse_indices]
 
         # (B) Gap detection: 점수 내림차순 정렬 후 자연 끊김점 탐색
         if len(top_results) > 1:

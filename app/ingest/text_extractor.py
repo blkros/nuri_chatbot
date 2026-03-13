@@ -20,10 +20,11 @@ def _is_meaningful_header(headers: list[str]) -> bool:
     return non_empty >= len(headers) * 0.4 and non_empty >= 2
 
 
-def _format_table(table: list[list[str | None]]) -> str:
+def _format_table(table: list[list[str | None]], label: str = "") -> str:
     """pdfplumber 표를 구조화 텍스트로 변환.
 
     헤더가 의미 있으면 `키: 값` 형태, 아니면 `|`로 셀 나열.
+    label이 있으면 표 앞에 섹션 제목으로 붙인다.
     """
     if not table or len(table) < 2:
         return ""
@@ -49,59 +50,145 @@ def _format_table(table: list[list[str | None]]) -> str:
     if not rows_text:
         return ""
 
-    # 헤더가 의미 있으면 헤더 라벨 추가
+    result = ""
+    if label:
+        result += f"[{label}]\n"
     if use_headers:
         header_line = " | ".join(h for h in headers if h)
-        return f"({header_line})\n" + "\n".join(rows_text)
+        result += f"({header_line})\n"
+    result += "\n".join(rows_text)
 
-    return "\n".join(rows_text)
+    return result
+
+
+def _find_section_label(page, table_bbox, all_table_bboxes) -> str:
+    """표 바로 위 영역에서 섹션 제목을 찾는다.
+
+    표의 상단 bbox 위쪽 영역을 crop하여 텍스트를 추출하고,
+    마지막 줄(표 바로 위 텍스트)을 섹션 제목으로 사용.
+    """
+    table_top = table_bbox[1]  # y0 (표 상단 y좌표)
+
+    # 이 표 바로 위에 있는 다른 표의 하단 찾기 (겹치지 않게)
+    search_top = 0
+    for other_bbox in all_table_bboxes:
+        other_bottom = other_bbox[3]  # y1
+        if other_bottom < table_top and other_bottom > search_top:
+            search_top = other_bottom
+
+    # 표 위 영역이 너무 좁으면 스킵
+    if table_top - search_top < 10:
+        return ""
+
+    try:
+        # 표 위쪽 영역 crop
+        above_area = page.within_bbox((
+            0,                   # x0: 페이지 왼쪽
+            search_top,          # y0: 이전 표 하단 또는 페이지 상단
+            page.width,          # x1: 페이지 오른쪽
+            table_top,           # y1: 현재 표 상단
+        ))
+        text = above_area.extract_text() or ""
+        text = text.strip()
+        if not text:
+            return ""
+
+        # 마지막 몇 줄에서 섹션 제목 추출
+        lines = [l.strip() for l in text.split("\n") if l.strip()]
+        if not lines:
+            return ""
+
+        # 마지막 줄이 섹션 제목일 가능성이 높음
+        # 너무 긴 텍스트는 제목이 아님
+        candidate = lines[-1]
+        if len(candidate) > 80:
+            return ""
+
+        return candidate
+
+    except Exception:
+        return ""
 
 
 def _extract_page_text_with_tables(page) -> str:
-    """페이지에서 표와 일반 텍스트를 모두 추출하여 합친다.
+    """페이지에서 표와 일반 텍스트를 위치 순서대로 추출.
 
-    표가 있으면 구조화 텍스트로 변환하고, 표 외 영역의 텍스트도 함께 포함.
-    표가 없으면 기존 extract_text()와 동일하게 동작.
+    각 표 앞에 섹션 제목(예: "산업용전력(갑)")을 붙여
+    VLM이 어떤 카테고리의 표인지 구분할 수 있게 한다.
     """
-    tables = page.extract_tables()
+    table_objects = page.find_tables()
 
-    if not tables:
+    if not table_objects:
         return page.extract_text() or ""
 
-    parts = []
+    # 표 bounding box 수집
+    table_bboxes = [t.bbox for t in table_objects]
+    tables_data = [t.extract() for t in table_objects]
 
-    # 표 영역의 bbox 수집 (표 외 텍스트 추출용)
-    table_bboxes = []
-    for table_obj in page.find_tables():
-        table_bboxes.append(table_obj.bbox)
+    # 모든 요소를 (y좌표, 타입, 내용) 리스트로 수집
+    elements = []
 
-    # 표 외 영역 텍스트 추출
-    if table_bboxes:
-        non_table_page = page
-        for bbox in table_bboxes:
-            try:
-                non_table_page = non_table_page.outside_bbox(bbox)
-            except Exception:
-                pass
-        non_table_text = non_table_page.extract_text() or ""
-        if non_table_text.strip():
-            parts.append(non_table_text.strip())
-
-    # 각 표를 구조화 텍스트로 변환
-    for i, table in enumerate(tables):
-        formatted = _format_table(table)
+    # 1. 각 표 + 섹션 라벨
+    for i, (tdata, bbox) in enumerate(zip(tables_data, table_bboxes)):
+        label = _find_section_label(page, bbox, table_bboxes)
+        formatted = _format_table(tdata, label=label)
         if formatted:
-            parts.append(f"[표 {i+1}]\n{formatted}")
+            elements.append((bbox[1], formatted))  # y0 기준 정렬
 
-    return "\n\n".join(parts) if parts else (page.extract_text() or "")
+    # 2. 표 외 영역 텍스트 (표에 포함되지 않은 독립 텍스트)
+    # 페이지 상단/하단의 일반 텍스트 추출
+    non_table_page = page
+    for bbox in table_bboxes:
+        try:
+            non_table_page = non_table_page.outside_bbox(bbox)
+        except Exception:
+            pass
+    non_table_text = non_table_page.extract_text() or ""
+
+    # 표 라벨에 이미 포함된 텍스트는 중복이므로,
+    # 섹션 라벨로 사용되지 않은 독립 텍스트만 추가
+    if non_table_text.strip():
+        # 페이지 최상단 텍스트 (첫 표 위)
+        if table_bboxes:
+            first_table_top = min(b[1] for b in table_bboxes)
+            last_table_bottom = max(b[3] for b in table_bboxes)
+        else:
+            first_table_top = page.height
+            last_table_bottom = 0
+
+        # 페이지 제목/머리글 (첫 표 위 전체)
+        try:
+            top_area = page.within_bbox((0, 0, page.width, first_table_top))
+            top_text = (top_area.extract_text() or "").strip()
+            if top_text and len(top_text) > 5:
+                elements.append((0, top_text))
+        except Exception:
+            pass
+
+        # 페이지 하단 (마지막 표 아래)
+        try:
+            bottom_area = page.within_bbox((
+                0, last_table_bottom, page.width, page.height
+            ))
+            bottom_text = (bottom_area.extract_text() or "").strip()
+            if bottom_text and len(bottom_text) > 5:
+                elements.append((last_table_bottom, bottom_text))
+        except Exception:
+            pass
+
+    # y좌표 기준 정렬 (페이지 위→아래 순서)
+    elements.sort(key=lambda x: x[0])
+
+    result = "\n\n".join(content for _, content in elements)
+    return result if result.strip() else (page.extract_text() or "")
 
 
 def extract_texts_from_pdf(pdf_path: Path) -> list[str]:
     """PDF에서 페이지별 텍스트 직접 추출 (pdfplumber).
 
     표가 있는 페이지는 표 구조를 보존한 구조화 텍스트로 변환.
+    각 표 앞에 섹션 제목을 붙여 카테고리를 구분한다.
     OCR 없이 PDF 내부 텍스트 레이어를 읽으므로 정확도가 높고 빠르다.
-    LibreOffice로 변환된 Office 문서(HWP, Excel, Word 등)도 동일하게 처리.
     """
     import pdfplumber
 

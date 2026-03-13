@@ -191,5 +191,325 @@
     "question": "2차년도에 검토·적용하려는 핵심 기법 3가지는 뭐야?",
     "expected": ["CBR", "크리깅"],
     "note": "CBR(Case-Based Reasoning), 시공간 크리깅, AI 기반 크리깅"
+  },
+  {
+    "id": 25,
+    "doc": "HES화면기획",
+    "type": "단순조회",
+    "question": "메인 대시보드 관리자 화면의 페이지 코드는?",
+    "expected": ["ENERGY-001"],
+    "note": ""
+  },
+  {
+    "id": 26,
+    "doc": "HES화면기획",
+    "type": "단순조회",
+    "question": "메인 대시보드 상가 사용자 화면의 페이지 코드는?",
+    "expected": ["ENERGY-002"],
+    "note": ""
+  },
+  {
+    "id": 27,
+    "doc": "HES화면기획",
+    "type": "단순조회",
+    "question": "전기요금 계산 및 조회 페이지의 페이지 코드는?",
+    "expected": ["ENERGY-003"],
+    "note": ""
+  },
+  {
+    "id": 28,
+    "doc": "HES화면기획",
+    "type": "단순조회",
+    "question": "청구서 조회 버튼 활성화 페이지의 페이지 코드는?",
+    "expected": ["ENERGY-004"],
+    "note": ""
+  },
+  {
+    "id": 29,
+    "doc": "HES화면기획",
+    "type": "단순조회",
+    "question": "조견표 관리 페이지의 페이지 코드는?",
+    "expected": ["ENERGY-005"],
+    "note": ""
+  },
+  {
+    "id": 30,
+    "doc": "HES화면기획",
+    "type": "단순조회",
+    "question": "상가 정보 관리 페이지의 페이지 코드는?",
+    "expected": ["ENERGY-006"],
+    "note": ""
+  },
+  {
+    "id": 31,
+    "doc": "HES화면기획",
+    "type": "단순조회",
+    "question": "전기검침 페이지의 페이지 코드는?",
+    "expected": ["ENERGY-007"],
+    "note": ""
+  },
+  {
+    "id": 32,
+    "doc": "HES화면기획",
+    "type": "단순조회",
+    "question": "LP검침 페이지의 페이지 코드는?",
+    "expected": ["ENERGY-008"],
+    "note": ""
+  },
+  {
+    "id": 33,
+    "doc": "HES화면기획",
+    "type": "단순조회",
+    "question": "사용자 관리 페이지의 페이지 코드는?",
+    "expected": ["ENERGY-009"],
+    "note": ""
+  },
+  {
+    "id": 34,
+    "doc": "HES화면기획",
+    "type": "단순조회",
+    "question": "조견표 관리 메뉴의 권한은 누구야?",
+    "expected": ["관리자"],
+    "note": ""
+  },
+  {
+    "id": 35,
+    "doc": "HES화면기획",
+    "type": "단순조회",
+    "question": "전기요금 계산 및 조회 메뉴의 권한은 누구야?",
+    "expected": ["관리자", "상가"],
+    "note": ""
+  },
+  {
+    "id": 36,
+    "doc": "HES화면기획",
+    "type": "목록조회",
+    "question": "관리자 메인 대시보드에서 표시하는 통계 정보 4가지는?",
+    "expected": ["관리 고객 수", "전월 절감액", "전월 평균 절감율", "전월 전력 사용량"],
+    "note": ""
+  },
+  {
+    "id": 37,
+    "doc": "HES화면기획",
+    "type": "목록조회",
+    "question": "상가 사용자 메인 대시보드에서 표시하는 당월 정보 4가지는?",
+    "expected": ["당월 실시간 사용량", "당월 예상 사용량", "당월 실시간 요금", "당월 예상 요금"],
+    "note": ""
+  },
+  {
+    "id": 38,
+    "doc": "HES화면기획",
+    "type": "단순조회",
+    "question": "전기요금 계산 및 조회 페이지의 검색 조건은?",
+    "expected": ["상가명", "청구년월"],
+    "note": "고객타입(상가/공용부)도 포함"
+  },
+  {
+    "id": 39,
+    "doc": "HES화면기획",
+    "type": "목록조회",
+    "question": "진천군 계약정보 팝업에서 입력하는 항목 3가지는?",
+    "expected": ["계약종별", "계약전력", "부하별 사용량"],
+    "note": ""
+  },
+  {
+    "id": 40,
+    "doc": "HES화면기획",
+    "type": "단순조회",
+    "question": "청구서 조회 페이지에서 태웅이엔에스㈜ 납부금액은 어떻게 표시돼?",
+    "expected": ["80%"],
+    "note": "절감액의 80% 납부금액 명시"
+  },
+  {
+    "id": 41,
+    "doc": "HES화면기획",
+    "type": "목록조회",
+    "question": "청구서 조회 페이지에서 제공하는 출력 기능 2가지는?",
+    "expected": ["청구서 출력", "PDF 다운로드"],
+    "note": ""
+  },
+  {
+    "id": 42,
+    "doc": "HES화면기획",
+    "type": "단순조회",
+    "question": "진천군 계약정보가 미입력일 때 청구서 조회를 하면 무엇이 뜨나?",
+    "expected": ["알림창"],
+    "note": ""
+  },
+  {
+    "id": 43,
+    "doc": "HES화면기획",
+    "type": "단순조회",
+    "question": "조견표 관리 페이지의 검색 조건은?",
+    "expected": ["계약종", "선택요금"],
+    "note": "저압/고압 조회도 포함"
+  },
+  {
+    "id": 44,
+    "doc": "HES화면기획",
+    "type": "목록조회",
+    "question": "상가 정보 관리 페이지에서 가능한 주요 액션은?",
+    "expected": ["수정", "이사", "삭제", "입주"],
+    "note": ""
+  },
+  {
+    "id": 45,
+    "doc": "HES화면기획",
+    "type": "단순조회",
+    "question": "전기검침 페이지에서 XPERP 연계용으로 추출하는 데이터는?",
+    "expected": ["전월지침", "사용량"],
+    "note": ""
+  },
+  {
+    "id": 46,
+    "doc": "HES화면기획",
+    "type": "목록조회",
+    "question": "전기검침 페이지의 사용량 정보 항목 7가지는?",
+    "expected": ["현월 사용량", "전월누적", "현월누적"],
+    "note": "7개 중 핵심 3개로 체크"
+  },
+  {
+    "id": 47,
+    "doc": "HES화면기획",
+    "type": "단순조회",
+    "question": "LP검침 시간대별 팝업에서 제공하는 15분 단위 데이터는?",
+    "expected": ["15분단위", "사용량"],
+    "note": ""
+  },
+  {
+    "id": 48,
+    "doc": "HES화면기획",
+    "type": "단순조회",
+    "question": "LP검침 시간대별 팝업에서 제공하는 1시간 단위 데이터는?",
+    "expected": ["1시간", "최대수요전력"],
+    "note": "사용량도 포함"
+  },
+  {
+    "id": 49,
+    "doc": "HES화면기획",
+    "type": "단순조회",
+    "question": "비밀번호 변경 규칙은?",
+    "expected": ["영문", "숫자", "6~12자"],
+    "note": ""
+  },
+  {
+    "id": 50,
+    "doc": "VPN메뉴얼",
+    "type": "단순조회",
+    "question": "Android에서 설치하는 앱 이름은?",
+    "expected": ["Nexg SecureClient V2.0"],
+    "note": ""
+  },
+  {
+    "id": 51,
+    "doc": "VPN메뉴얼",
+    "type": "단순조회",
+    "question": "iOS에서 설치하는 앱 이름은?",
+    "expected": ["Nexg SecureClient V3.0"],
+    "note": ""
+  },
+  {
+    "id": 52,
+    "doc": "VPN메뉴얼",
+    "type": "단순조회",
+    "question": "앱 실행 후 먼저 클릭하는 항목은?",
+    "expected": ["접속 프로필 생성"],
+    "note": ""
+  },
+  {
+    "id": 53,
+    "doc": "VPN메뉴얼",
+    "type": "단순조회",
+    "question": "프로필 목록에서 새 프로필을 만들 때 누르는 버튼은?",
+    "expected": ["+"],
+    "note": ""
+  },
+  {
+    "id": 54,
+    "doc": "VPN메뉴얼",
+    "type": "단순조회",
+    "question": "프로필 수정 화면의 호스트 값은?",
+    "expected": ["112.219.140.178"],
+    "note": ""
+  },
+  {
+    "id": 55,
+    "doc": "VPN메뉴얼",
+    "type": "단순조회",
+    "question": "프로필 수정 화면의 포트 값은?",
+    "expected": ["5555"],
+    "note": ""
+  },
+  {
+    "id": 56,
+    "doc": "VPN메뉴얼",
+    "type": "단순조회",
+    "question": "프로필 항목 중 자유롭게 기재하는 값은?",
+    "expected": ["프로필"],
+    "note": ""
+  },
+  {
+    "id": 57,
+    "doc": "VPN메뉴얼",
+    "type": "목록조회",
+    "question": "프로필 수정 화면에서 체크 해제해야 하는 항목 2개는?",
+    "expected": ["인증서 사용", "OTP 사용"],
+    "note": ""
+  },
+  {
+    "id": 58,
+    "doc": "VPN메뉴얼",
+    "type": "단순조회",
+    "question": "iOS 사용자만 추가로 눌러야 하는 설정 메뉴는?",
+    "expected": ["톱니바퀴", "일반 설정"],
+    "note": ""
+  },
+  {
+    "id": 59,
+    "doc": "VPN메뉴얼",
+    "type": "단순조회",
+    "question": "iOS에서 반드시 체크해야 하는 항목은?",
+    "expected": ["보안 연결 사용"],
+    "note": ""
+  },
+  {
+    "id": 60,
+    "doc": "VPN메뉴얼",
+    "type": "단순조회",
+    "question": "Android 사용자는 어느 단계로 바로 이동해?",
+    "expected": ["7"],
+    "note": "7번 절차"
+  },
+  {
+    "id": 61,
+    "doc": "VPN메뉴얼",
+    "type": "단순조회",
+    "question": "VPN 연결을 시작할 때 메인 화면에서 누르는 것은?",
+    "expected": ["전원"],
+    "note": "전원 버튼"
+  },
+  {
+    "id": 62,
+    "doc": "VPN메뉴얼",
+    "type": "단순조회",
+    "question": "VPN 연결 정상 여부는 어떻게 확인해?",
+    "expected": ["화면", "변경"],
+    "note": "화면이 변경되면 정상 연결"
+  },
+  {
+    "id": 63,
+    "doc": "VPN메뉴얼",
+    "type": "단순조회",
+    "question": "VPN 연결 후 크롬 주소창에 입력하는 주소는?",
+    "expected": ["gw.nuriflex.co.kr"],
+    "note": ""
+  },
+  {
+    "id": 64,
+    "doc": "VPN메뉴얼",
+    "type": "단순조회",
+    "question": "VPN 연결 후 동일하게 이용 가능하다고 적힌 서비스는?",
+    "expected": ["eAcc"],
+    "note": ""
   }
 ]

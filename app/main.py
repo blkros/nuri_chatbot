@@ -21,6 +21,7 @@ from app.ingest.embedder import (
 )
 from app.search.reranker import rerank
 from app.search.vllm_client import (
+    decompose_query,
     extract_structured_text_from_image,
     generate_answer,
     generate_answer_stream,
@@ -592,18 +593,36 @@ def _prepare_rag_context(question: str, top_k: int = 0, history: list[dict] | No
         logger.warning("쿼리 리라이팅 실패 (원본 사용): %s", e)
         search_query = question
 
-    # 1. 쿼리 임베딩
-    text_vector = embed_query_text(search_query)
-    image_vectors = embed_query_for_images(search_query)
-    sparse_vector = text_to_sparse_vector(search_query)
+    # 0.5 쿼리 분해 (복합 질문 → 서브쿼리)
+    try:
+        sub_queries = decompose_query(search_query)
+    except Exception as e:
+        logger.warning("쿼리 분해 실패 (원본 사용): %s", e)
+        sub_queries = [search_query]
 
-    # 2. Qdrant 하이브리드 검색
-    results = search_pages(
-        text_query_vector=text_vector,
-        image_query_vectors=image_vectors,
-        sparse_query_vector=sparse_vector,
-        limit=15,
-    )
+    # 1~2. 서브쿼리별 검색 → 결과 병합
+    all_results = []
+    seen_keys = set()
+    for sq in sub_queries:
+        text_vector = embed_query_text(sq)
+        image_vectors = embed_query_for_images(sq)
+        sparse_vector = text_to_sparse_vector(sq)
+
+        sq_results = search_pages(
+            text_query_vector=text_vector,
+            image_query_vectors=image_vectors,
+            sparse_query_vector=sparse_vector,
+            limit=15,
+        )
+        for r in sq_results:
+            key = (r["file_name"], r["page_number"])
+            if key not in seen_keys:
+                seen_keys.add(key)
+                all_results.append(r)
+
+    if len(sub_queries) > 1:
+        logger.info("쿼리 분해 검색: %d 서브쿼리 → %d 결과 (중복 제거)", len(sub_queries), len(all_results))
+    results = all_results
 
     if not results:
         return {"early_return": {

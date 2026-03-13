@@ -1,5 +1,6 @@
 import base64
 import io
+import json
 import logging
 
 import httpx
@@ -129,6 +130,66 @@ def rewrite_query(question: str, history: list[dict] | None = None) -> str:
     return rewritten
 
 
+def decompose_query(question: str) -> list[str]:
+    """복합 질문을 독립적인 서브쿼리로 분해.
+
+    단순 질문이면 원본 그대로 [question] 반환.
+    복합 질문이면 2~3개 서브쿼리 리스트 반환.
+    텍스트 전용 호출이라 빠름 (~0.3초).
+    """
+    client = _get_vllm_client(timeout=30.0)
+
+    response = client.chat.completions.create(
+        model=settings.vllm_model,
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "/no_think\n"
+                    "사용자의 질문을 분석하여 독립적인 검색 쿼리로 분해하세요.\n\n"
+                    "## 규칙\n"
+                    "- 질문이 하나의 주제만 다루면 그대로 반환\n"
+                    "- 질문이 여러 조건/항목을 동시에 물으면 각각 분리\n"
+                    '- JSON 배열로만 응답: ["쿼리1"] 또는 ["쿼리1", "쿼리2"]\n'
+                    "- 최대 3개까지만 분해\n"
+                    "- 각 쿼리는 자기 완결적 (원본 맥락 포함)\n"
+                ),
+            },
+            {"role": "user", "content": "연구개발용 원자재 300만원 구입 결재권자는?"},
+            {"role": "assistant", "content": '["연구개발용 원자재 300만원 구입 결재권자는?"]'},
+            {"role": "user", "content": "R&D 원자재 500만원이하와 1000만원이하 결재권자 각각 알려줘"},
+            {"role": "assistant", "content": '["R&D 원자재 500만원이하 결재권자는?", "R&D 원자재 1000만원이하 결재권자는?"]'},
+            {"role": "user", "content": "이번주 월요일 중식 메뉴랑 화요일 석식 메뉴 알려줘"},
+            {"role": "assistant", "content": '["월요일 중식 메뉴는?", "화요일 석식 메뉴는?"]'},
+            {"role": "user", "content": "03월 03일 중식 특식명은 뭐야?"},
+            {"role": "assistant", "content": '["03월 03일 중식 특식명은 뭐야?"]'},
+            {"role": "user", "content": question},
+        ],
+        max_tokens=200,
+        temperature=0.0,
+    )
+
+    if not response.choices or not response.choices[0].message.content:
+        return [question]
+
+    raw = response.choices[0].message.content.strip()
+    if "</think>" in raw:
+        raw = raw.split("</think>")[-1].strip()
+
+    try:
+        queries = json.loads(raw)
+        if isinstance(queries, list) and all(isinstance(q, str) for q in queries):
+            queries = [q.strip() for q in queries if q.strip()]
+            if queries:
+                if len(queries) > 1:
+                    logger.info("쿼리 분해: '%s' → %s", question, queries)
+                return queries[:3]
+    except (json.JSONDecodeError, TypeError):
+        pass
+
+    return [question]
+
+
 def extract_structured_text_from_image(image: Image.Image) -> str:
     """이미지 파일 인제스트 시 VLM으로 구조화된 텍스트 추출.
 
@@ -168,7 +229,7 @@ def extract_structured_text_from_image(image: Image.Image) -> str:
             },
         ],
         max_tokens=2048,
-        temperature=0.1,
+        temperature=0.0,
     )
 
     if not response.choices or not response.choices[0].message.content:
